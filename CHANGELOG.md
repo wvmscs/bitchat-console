@@ -7,6 +7,7 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- `README.md`; real read-only run through Tor on `u09t` (lot 12).
 - Mixed groups over Nostr (lot 10): BitChat 1.8 group state and messages byte for byte (`groups`, checked with the app's Swift code), per-group Nostr addresses, consent before joining, the app's rules (pinned creator, epochs, removal by roster), destruction; storage, API (`/api/group`) and page.
 - The console over the map (lot 9, D26): `--map http://…` relays a running bitchat-geohash map at `/` (its Host and Origin, live streams), adds a floating, foldable console panel (the console at `/console/` in a frame) and a "Follow in console" button to the menu of a map cell; 502 when the map is not running.
 - Local storage and moderation (lot 8): SQLite `console.sqlite` (private file, numbered migrations) with muted keys (`set_muted`, hidden in the page, isolation window), saved messages (`add_preset`, `send_preset`) and scheduled messages sent when due (`add_schedule`, once or repeated, missed ones not made up, cells not followed skipped); API and page sections.

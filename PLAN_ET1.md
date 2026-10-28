@@ -18,7 +18,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 9 | Superposition à la carte de bitchat-geohash | ✅ |
 | 10 | Groupes mixtes (transport Nostr, entre consoles) | ✅ |
 | 11 | Feature `arti` | ✅ |
-| 12 | Validation réelle | ⬜ |
+| 12 | Validation réelle | ⏳ (avec l'utilisateur) |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
 8 dépend de 5 et 7 ; 9 dépend de 7 ; 10 dépend de 6 ; 11 dépend de 2 ; 12 clôt l'étape.
@@ -297,10 +297,30 @@ installer.
       `relay.famillevital.club` en 0,11 s. `tests/real_tor_diag.rs` : chaque étape d'un GET
       HTTPS par Tor, chronométrée.
 
-### Lot 12 : validation réelle ⬜
+### Lot 12 : validation réelle ⏳
 
-- [ ] Lecture et écriture réelles via Tor, DM avec l'app de l'utilisateur, groupes entre
-      deux consoles, superposition à la carte, mesures dans le journal.
+Fait par l'agent, seul :
+
+- [x] Boucle fermée par Tor (Arti) sur `relay.famillevital.club`, graines jetables
+      (`tests/real_tor.rs`) : liste iOS officielle par Tor, message vu par une autre console
+      en 0,1 à 0,4 s, DM reçu et accusé « délivré », groupe rejoint et message de groupe.
+- [x] Binaire réel avec Arti, page pilotée dans Chrome headless (lots 7 à 9), sur le relais
+      de l'utilisateur ; superposition à une vraie carte bitchat-geohash.
+- [x] **Lecture réelle à grande échelle par Tor** (28/10/2026, 3 h 37–3 h 48) : `u09t`
+      téléporté (aucune présence, rien envoyé), listes officielles par Tor, 9 cellules, 120
+      connexions (75 de canaux, 45 boîtes DM sur les relais par défaut) ; mémoire 26 à 36 Mo
+      sans croissance ; 54 connexions de canaux sur 75 établies, les 21 autres vers les 3
+      relais que bitchat-geohash classe aussi morts ou injoignables
+      (`relay.cypherflow.ai`, `relay.sovereignresonance.org`, `treuzkas.branruz.com`) ;
+      95 à 109 participants comptés ; aucun message à cette heure ; aucun avertissement.
+
+À faire avec l'utilisateur :
+
+- [ ] DM entre la console et l'app iOS de l'utilisateur (dans les deux sens, accusés).
+- [ ] Message dans un vrai canal (autorisation de publier hors du relais de l'utilisateur)
+      et sa lecture par l'app ; présence vue par l'app.
+- [ ] Safari ; démon `tor` (`--tor-socks`) si l'utilisateur l'installe.
+- [ ] Revue des décisions prises par l'agent (D19 à D27).
 
 ## Décisions
 
@@ -352,3 +372,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 8 | Stockage local, masquage et isolement, préenregistrés, planifiés. Conflit `rusqlite` 0.41 / Arti résolu en 0.40. Base créée en `0644` repérée à l'essai réel → `0600`, test ajouté. 49 tests, 5 `node`, clippy propre avec et sans `arti`. |
 | 28/10/2026 | 9 | Superposition par relais (D26). 52 tests Rust, 5 `node`. Essai réel avec bitchat-geohash et Chrome headless. Commit `84f60f3` poussé par erreur avec 4 avertissements clippy dans `tests/map.rs` (le commit n'attendait pas clippy) : corrigés au commit suivant ; désormais clippy est vérifié avant chaque commit. |
 | 28/10/2026 | 10 | Groupes : format de l'app vérifié par son code Swift, transport Nostr, consentement, règles de l'app, destruction. Deux défauts trouvés et corrigés (boîte d'un groupe en attente, fermeture trop rapide des connexions). 57 tests Rust, 5 `node`, clippy propre avec et sans `arti`. Essai réel par Tor : groupe en 0,77 s, message en 0,16 s. |
+| 28/10/2026 | 12 | Lecture réelle par Tor sur `u09t` (10 min, 120 connexions, mémoire stable, relais morts identiques à bitchat-geohash) ; README. Restent les essais avec l'app et la revue des décisions de l'agent. |
