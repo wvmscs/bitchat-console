@@ -10,13 +10,15 @@ use std::sync::Arc;
 
 use axum::Extension;
 use axum::body::Body;
-use axum::extract::Request;
+use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use futures_util::StreamExt;
 use http_body_util::BodyExt;
 use hyper_util::rt::TokioIo;
+use tokio::sync::watch;
 
-use super::api::ApiError;
+use super::api::{ApiError, AppState};
 use crate::error::{Error, Result};
 
 /// The bitchat-geohash server: `http://host:port`, on this machine.
@@ -64,8 +66,12 @@ fn hop_by_hop(name: &str) -> bool {
 
 /// Relays a request to the map server and its answer back; the map's page
 /// gets the console added.
-pub(crate) async fn proxy(Extension(up): Extension<Arc<Upstream>>, req: Request) -> Response {
-    match relay(&up, req).await {
+pub(crate) async fn proxy(
+    State(state): State<AppState>,
+    Extension(up): Extension<Arc<Upstream>>,
+    req: Request,
+) -> Response {
+    match relay(&up, req, state.stop.clone()).await {
         Ok(r) => r,
         Err(e) => {
             tracing::warn!(map = %up.authority, error = %e, "map unreachable");
@@ -82,6 +88,7 @@ pub(crate) async fn proxy(Extension(up): Extension<Arc<Upstream>>, req: Request)
 async fn relay(
     up: &Upstream,
     req: Request,
+    mut stop: watch::Receiver<bool>,
 ) -> std::result::Result<Response, Box<dyn std::error::Error + Send + Sync>> {
     let page = req.uri().path() == "/";
     let (parts, body) = req.into_parts();
@@ -147,8 +154,13 @@ async fn relay(
         parts.headers.remove(header::CONTENT_LENGTH);
         return Ok(Response::from_parts(parts, Body::from(text)));
     }
-    // Everything else as it comes, streams (SSE) included.
-    Ok(Response::from_parts(parts, Body::new(incoming)))
+    // Everything else as it comes, streams (SSE) included; a stream ends
+    // when the server stops, which otherwise waits for it.
+    let stopped = async move {
+        let _ = stop.wait_for(|s| *s).await;
+    };
+    let body = incoming.into_data_stream().take_until(Box::pin(stopped));
+    Ok(Response::from_parts(parts, Body::from_stream(body)))
 }
 
 #[cfg(test)]

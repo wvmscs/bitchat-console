@@ -235,3 +235,42 @@ async fn a_map_that_is_not_running() {
     .await;
     assert_eq!(status, 200);
 }
+
+#[tokio::test]
+async fn stopping_ends_the_map_streams() {
+    let map = fake_map().await;
+    let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
+    let c = Arc::new(console(&[relay.url()], Arc::new(Loopback)));
+    let server = serve(
+        c,
+        ServerConfig {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            map: Some(format!("http://{map}")),
+            ..ServerConfig::default()
+        },
+    )
+    .await
+    .unwrap();
+    let addr = server.local_addr();
+    let mut s = TcpStream::connect(addr).await.unwrap();
+    s.write_all(format!("GET /api/events HTTP/1.1\r\nHost: {addr}\r\n\r\n").as_bytes())
+        .await
+        .unwrap();
+    let mut lines = BufReader::new(s).lines();
+    while !lines
+        .next_line()
+        .await
+        .unwrap()
+        .unwrap()
+        .starts_with("data:")
+    {}
+    // A browser that keeps the map open does not hold the server.
+    tokio::time::timeout(Duration::from_secs(5), server.shutdown())
+        .await
+        .expect("the server waited for the map's stream");
+    let end = tokio::time::timeout(Duration::from_secs(5), async {
+        while let Ok(Some(_)) = lines.next_line().await {}
+    })
+    .await;
+    assert!(end.is_ok(), "the stream did not end");
+}
