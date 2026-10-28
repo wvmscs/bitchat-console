@@ -86,7 +86,21 @@ function showView(v) {
     pane: "bc-outline", interactive: false, fill: false, dashArray: c === v.center || v.selected ? null : "4 4",
     weight: c === v.center || v.selected ? 3 : 1.5, color: "#0a66c2",
   }))).addTo(map);
+  // The map shows the level of the console's cell (its own `#level=`).
+  mapLevel((v.selected || v.center).length);
   if (!v.fit) return;
+  // After the map has changed its level (it may frame on its own).
+  setTimeout(() => fit(map, boxes), 60);
+}
+
+function mapLevel(level) {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get("show") === "meshes" || h.get("level") === String(level)) return;
+  h.set("level", String(level));
+  location.hash = h.toString();
+}
+
+function fit(map, boxes) {
   const r = box.classList.contains("folded") ? null : box.getBoundingClientRect();
   const size = map.getSize();
   const p = document.getElementById("panel")?.getBoundingClientRect();
