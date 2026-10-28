@@ -20,11 +20,15 @@ use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
+mod groups;
+
+pub use groups::{GroupChat, GroupOp, GroupView, GroupsView, Invitation, MemberView};
+
 use crate::connector::Connector;
 use crate::db::{Db, Preset, Schedule};
 use crate::envelope;
 use crate::error::{Error, Result};
-use crate::identity::Seed;
+use crate::identity::{CellKey, NoiseIdentity, Seed};
 use crate::nostr::{Event, Filter, unix_now};
 use crate::packet::{self, Packet};
 use crate::relay::{self, ConnState, RelayEvent, RelayHandle};
@@ -54,6 +58,8 @@ pub struct ConsoleConfig {
     /// Local storage (mutes, saved and scheduled messages); `None`: in
     /// memory, lost at the end.
     pub db_path: Option<std::path::PathBuf>,
+    /// The console as a BitChat peer, for groups (lot 10).
+    pub noise: Option<Arc<NoiseIdentity>>,
     /// How far back a subscription asks (the apps: 1 h).
     pub lookback_secs: i64,
     /// `limit` of the subscription (the apps: 200).
@@ -79,6 +85,7 @@ impl ConsoleConfig {
             presence_every: (Duration::from_secs(40), Duration::from_secs(80)),
             dm_relays: default_dm_relays(),
             db_path: None,
+            noise: None,
             lookback_secs: 3600,
             limit: 200,
             per_cell: 500,
@@ -122,6 +129,10 @@ pub struct AreaStatus {
     /// The console's public key in each cell it uses (public).
     pub keys: BTreeMap<String, String>,
 }
+
+/// Delay before a connection no longer wanted is closed (it may still have
+/// something to send); the actual close happens at the next control tick.
+const CLOSE_DELAY: Duration = Duration::from_secs(10);
 
 /// How far back the private-message inbox asks (iOS: 24 h).
 pub const DM_LOOKBACK_SECS: i64 = 24 * 3600;
@@ -217,6 +228,9 @@ pub enum ConsoleEvent {
     },
     /// Mutes, saved or scheduled messages changed.
     Local,
+    /// Groups or invitations changed.
+    Groups,
+    GroupMessage(GroupChat),
     /// Text from a relay (NOTICE, CLOSED reason): show, never trust.
     RelayText {
         relay: String,
@@ -242,6 +256,8 @@ enum Command {
     DeletePreset(i64, oneshot::Sender<Result<bool>>),
     AddSchedule(Schedule, oneshot::Sender<Result<i64>>),
     DeleteSchedule(i64, oneshot::Sender<Result<bool>>),
+    Group(groups::GroupOp, oneshot::Sender<Result<()>>),
+    Groups(oneshot::Sender<GroupsView>),
     Messages(String, oneshot::Sender<Vec<Message>>),
     Status(oneshot::Sender<AreaStatus>),
     Shutdown,
@@ -268,7 +284,14 @@ impl Console {
         let (tx, rx) = mpsc::unbounded_channel();
         let (relay_tx, relay_rx) = mpsc::unbounded_channel();
         let (events, _) = broadcast::channel(1024);
+        let loaded_groups = groups::load(&db);
         let state = State {
+            groups: loaded_groups,
+            group_msgs: VecDeque::new(),
+            invitations: Vec::new(),
+            awaiting: HashSet::new(),
+            invited: Vec::new(),
+            closing: Vec::new(),
             db,
             store: Box::new(MemoryStore::new(config.per_cell)),
             config,
@@ -463,6 +486,16 @@ impl Console {
         self.ask(|r| Command::DeleteSchedule(id, r)).await?
     }
 
+    /// Groups, their messages and the invitations waiting.
+    pub async fn groups(&self) -> Result<GroupsView> {
+        self.ask(Command::Groups).await
+    }
+
+    /// Runs a group operation (create, invite, accept, send…).
+    pub async fn group(&self, op: groups::GroupOp) -> Result<()> {
+        self.ask(|r| Command::Group(op, r)).await?
+    }
+
     /// The messages of a cell, oldest first.
     pub async fn messages(&self, cell: &str) -> Result<Vec<Message>> {
         let c = cell.to_owned();
@@ -546,6 +579,19 @@ impl Seen {
 struct State {
     config: ConsoleConfig,
     db: Db,
+    /// Group ID (hex) -> state and the pinned Nostr address of its creator.
+    groups: BTreeMap<String, (crate::groups::GroupState, String)>,
+    group_msgs: VecDeque<GroupChat>,
+    /// Invitations received, waiting for the user.
+    invitations: Vec<Invitation>,
+    /// Groups accepted, whose first state has not come yet.
+    awaiting: HashSet<String>,
+    /// Join requests sent: (group, peer key, cell).
+    invited: Vec<(String, String, String)>,
+    /// Connections no longer wanted, closed a little later so that what
+    /// they still have to send (a message just before an area change, the
+    /// last envelopes of a group) goes out. Their events are ignored.
+    closing: Vec<(tokio::time::Instant, RelayHandle)>,
     store: Box<dyn MessageStore>,
     center: Option<String>,
     teleport: bool,
@@ -657,6 +703,13 @@ impl State {
                 self.local_changed();
                 let _ = reply.send(r);
             }
+            Command::Group(op, reply) => {
+                let r = self.group_op(op);
+                let _ = reply.send(r);
+            }
+            Command::Groups(reply) => {
+                let _ = reply.send(self.groups_view());
+            }
             Command::DeleteSchedule(id, reply) => {
                 let r = self.db.delete_schedule(id);
                 self.local_changed();
@@ -713,8 +766,15 @@ impl State {
         }
         // The private-message inbox of each identity in use, on the default
         // relays, through the circuit of its cell (D7, D20).
-        for cell in &identities {
-            let key = self.config.seed.cell(cell)?;
+        let mut inboxes = identities.clone();
+        inboxes.extend(
+            self.groups
+                .keys()
+                .chain(&self.awaiting)
+                .map(|g| groups::label(g)),
+        );
+        for cell in &inboxes {
+            let key = self.label_key(cell)?;
             for relay in &self.config.dm_relays {
                 wanted
                     .entry((relay.clone(), cell.clone()))
@@ -728,7 +788,18 @@ impl State {
                     });
             }
         }
-        self.conns.retain(|k, _| wanted.contains_key(k));
+        let gone: Vec<(String, String)> = self
+            .conns
+            .keys()
+            .filter(|k| !wanted.contains_key(*k))
+            .cloned()
+            .collect();
+        let later = tokio::time::Instant::now() + CLOSE_DELAY;
+        for k in gone {
+            if let Some(h) = self.conns.remove(&k) {
+                self.closing.push((later, h));
+            }
+        }
         self.states.retain(|k, _| wanted.contains_key(k));
         self.subs.retain(|k, _| wanted.contains_key(k));
         for ((relay, cell), filters) in wanted {
@@ -838,9 +909,26 @@ impl State {
 
     /// A `bitchat1:` packet with a `noiseEncrypted` payload, in an envelope
     /// to `peer` from the key of `cell`.
+    /// The key behind an inbox label: a cell, or `group:<id>` (D27).
+    fn label_key(&self, label: &str) -> Result<CellKey> {
+        match label.strip_prefix("group:") {
+            Some(g) => self.config.seed.labelled(&format!("group|{g}")),
+            None => self.config.seed.cell(label),
+        }
+    }
+
     fn envelope_to(&self, peer: &str, cell: &str, payload: Vec<u8>) -> Result<Event> {
-        let key = self.config.seed.cell(cell)?;
-        let packet = Packet::embedded(payload, (unix_now() as u64) * 1000).encode();
+        self.packet_to(
+            peer,
+            cell,
+            Packet::embedded(payload, (unix_now() as u64) * 1000),
+        )
+    }
+
+    /// A packet in an envelope to `peer` from the key of `label`.
+    fn packet_to(&self, peer: &str, label: &str, packet: Packet) -> Result<Event> {
+        let key = self.label_key(label)?;
+        let packet = packet.encode();
         let content = format!("bitchat1:{}", envelope::b64url_encode(&packet));
         envelope::create(&content, peer, key.signing_key())
             .ok_or(Error::InvalidKey(peer.to_owned()))
@@ -917,10 +1005,14 @@ impl State {
 
     /// A private envelope for the key of `cell`.
     fn on_wrap(&mut self, cell: String, wrap: Event) {
-        if !self.identities.contains(&cell) || !self.seen.insert(&wrap.id) {
+        // A group's inbox, or that of a group accepted and not yet joined.
+        let group_inbox = cell
+            .strip_prefix("group:")
+            .is_some_and(|g| self.groups.contains_key(g) || self.awaiting.contains(g));
+        if !(self.identities.contains(&cell) || group_inbox) || !self.seen.insert(&wrap.id) {
             return;
         }
-        let Ok(key) = self.config.seed.cell(&cell) else {
+        let Ok(key) = self.label_key(&cell) else {
             return;
         };
         let opened = match envelope::open(&wrap, key.signing_key()) {
@@ -937,11 +1029,20 @@ impl State {
         let Some(p) = envelope::b64url_decode(b64).and_then(|b| Packet::decode(&b)) else {
             return;
         };
+        if p.kind == crate::groups::TYPE_GROUP_MESSAGE {
+            self.on_group_message(&cell, &opened.sender, &p.payload);
+            return;
+        }
         if p.kind != packet::TYPE_NOISE_ENCRYPTED || p.payload.is_empty() {
             return;
         }
         let body = &p.payload[1..];
         match p.payload[0] {
+            packet::payload::GROUP_INVITE | packet::payload::GROUP_KEY_UPDATE => {
+                self.on_group_state(&cell, &opened.sender, body);
+            }
+            crate::groups::join::REQUEST => self.on_join_request(&cell, &opened.sender, body),
+            crate::groups::join::ACCEPT => self.on_join_accept(&cell, &opened.sender, body),
             packet::payload::PRIVATE_MESSAGE => {
                 let Some((id, content)) = packet::decode_private_message(body) else {
                     return;
@@ -1251,6 +1352,8 @@ impl State {
     }
 
     fn on_tick(&mut self) {
+        let t = tokio::time::Instant::now();
+        self.closing.retain(|(until, _)| *until > t);
         let now = unix_now();
         let from = now - self.config.participant_window_secs;
         for people in self.participants.values_mut() {

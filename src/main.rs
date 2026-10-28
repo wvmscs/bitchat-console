@@ -257,6 +257,7 @@ async fn main() {
     };
     let strategy = Arc::new(AppStrategy::new(Some(ios), android, args.apps));
     let mut config = ConsoleConfig::new(strategy, tor, Arc::new(keys.seed));
+    config.noise = Some(Arc::new(keys.noise));
     config.presence = args.presence;
     let db_path = args.data_dir.join(bitchat_console::db::DB_FILE);
     if let Err(e) = bitchat_console::db::Db::open(&db_path) {

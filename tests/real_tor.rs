@@ -59,6 +59,11 @@ async fn closed_loop_through_tor() {
         c.presence = false;
         // Private messages on the user's relay too, never on the defaults.
         c.dm_relays = vec![OWN_RELAY.to_owned()];
+        let mut n = [0u8; 32];
+        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut n);
+        c.noise = Some(Arc::new(
+            bitchat_console::identity::NoiseIdentity::from_bytes(n, n),
+        ));
         Console::start(c)
     };
     let (writer, reader) = (mk(), mk());
@@ -155,6 +160,85 @@ async fn closed_loop_through_tor() {
         t.elapsed().as_secs_f64()
     );
     assert_eq!(status, Some(bitchat_console::console::DmStatus::Delivered));
+
+    // A group between the two consoles, through Tor.
+    use bitchat_console::console::GroupOp;
+    let t = Instant::now();
+    writer
+        .group(GroupOp::Create {
+            name: "lot 10".into(),
+            nickname: "w".into(),
+        })
+        .await
+        .unwrap();
+    let gid = writer.groups().await.unwrap().groups[0].id.clone();
+    writer
+        .group(GroupOp::Invite {
+            group: gid.clone(),
+            peer: reader_cell_key.clone(),
+            cell: "u09tvw".into(),
+        })
+        .await
+        .unwrap();
+    let mut invited = false;
+    for _ in 0..300 {
+        if !reader.groups().await.unwrap().invitations.is_empty() {
+            invited = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(invited, "no invitation");
+    reader
+        .group(GroupOp::Accept {
+            group: gid.clone(),
+            nickname: "r".into(),
+        })
+        .await
+        .unwrap();
+    let mut joined = false;
+    for _ in 0..600 {
+        if reader.groups().await.unwrap().groups.len() == 1 {
+            joined = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(joined, "never joined");
+    println!(
+        "group joined through Tor in {:.2} s",
+        t.elapsed().as_secs_f64()
+    );
+    let t = Instant::now();
+    writer
+        .group(GroupOp::Send {
+            group: gid.clone(),
+            text: "bitchat-console lot 10: group through Tor".into(),
+            nickname: "w".into(),
+        })
+        .await
+        .unwrap();
+    let mut got_group = false;
+    for _ in 0..600 {
+        if reader
+            .groups()
+            .await
+            .unwrap()
+            .messages
+            .iter()
+            .any(|m| m.content.contains("lot 10"))
+        {
+            got_group = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(got_group, "group message never arrived");
+    println!(
+        "group message received in {:.2} s",
+        t.elapsed().as_secs_f64()
+    );
+    writer.group(GroupOp::Destroy { group: gid }).await.unwrap();
     writer.shutdown().await;
     reader.shutdown().await;
 }

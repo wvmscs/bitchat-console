@@ -10,7 +10,10 @@ use serde::Serialize;
 
 use crate::error::{Error, Result};
 
-const MIGRATIONS: &[(&str, &str)] = &[("0001_init", include_str!("migrations/0001_init.sql"))];
+const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", include_str!("migrations/0001_init.sql")),
+    ("0002_groups", include_str!("migrations/0002_groups.sql")),
+];
 /// Schema version this code writes.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 /// File of the database, in the data directory.
@@ -239,6 +242,38 @@ impl Db {
                 "UPDATE schedule SET next_at = ?1, last_result = ?2 WHERE id = ?3",
                 params![next, result, id],
             )
+            .map_err(sql)?;
+        Ok(())
+    }
+}
+
+impl Db {
+    /// Groups: (encoded state, pinned creator address).
+    pub fn groups(&self) -> Result<Vec<(Vec<u8>, String)>> {
+        let mut st = self
+            .conn
+            .prepare("SELECT state, creator_addr FROM grp")
+            .map_err(sql)?;
+        let rows = st
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(sql)?;
+        rows.collect::<std::result::Result<_, _>>().map_err(sql)
+    }
+
+    pub fn save_group(&self, group_id: &str, state: &[u8], creator_addr: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT INTO grp (group_id, state, creator_addr) VALUES (?1, ?2, ?3) \
+                 ON CONFLICT(group_id) DO UPDATE SET state = excluded.state",
+                params![group_id, state, creator_addr],
+            )
+            .map_err(sql)?;
+        Ok(())
+    }
+
+    pub fn delete_group(&self, group_id: &str) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM grp WHERE group_id = ?1", params![group_id])
             .map_err(sql)?;
         Ok(())
     }

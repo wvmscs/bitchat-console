@@ -26,6 +26,8 @@ const state = {
   texts: [],            // last relay texts (NOTICE, CLOSED, refusals)
   local: { mutes: [], presets: [], schedules: [] },
   isolate: null,        // key shown alone in the feed (isolation window)
+  groups: { groups: [], messages: [], invitations: [] },
+  group: null,          // open group id
 };
 
 const saved = key => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
@@ -265,6 +267,25 @@ function renderDms() {
     row.append(el("span", "muted small", clock(d.created_at) + (d.own ? " " + statusMark(d.status) : "")), body);
     thread.append(row);
   }
+  // Inviting this person to one of my groups (I am the creator).
+  const mine = state.groups.groups.filter(g => g.creator_is_me);
+  if (mine.length) {
+    const pick = el("select");
+    pick.setAttribute("aria-label", "group to invite to");
+    for (const g of mine) {
+      const o = el("option", null, g.name);
+      o.value = g.id;
+      pick.append(o);
+    }
+    const inv = el("button", null, "Invite to group");
+    inv.addEventListener("click", async () => {
+      const { ok, data } = await command("api/group", { op: "invite", group: pick.value, peer, cell });
+      inv.textContent = ok ? "invitation sent" : (data && data.message) || "refused";
+    });
+    const row = el("div", "row");
+    row.append(pick, inv);
+    box.append(row);
+  }
   const text = el("input", "text");
   text.placeholder = "private message (255 bytes at most)";
   const send = el("button", null, "Send");
@@ -282,6 +303,91 @@ function renderDms() {
 }
 
 // --- Rendering and live stream ------------------------------------------------------
+
+// --- Groups (lot 10) ------------------------------------------------------------
+
+function groupOp(body) {
+  return command("api/group", body).then(r => {
+    if (!r.ok) alert((r.data && r.data.message) || "refused");
+    return r;
+  });
+}
+
+function renderGroups() {
+  const box = document.getElementById("groups");
+  box.replaceChildren(el("h2", null, "Groups"));
+  const v = state.groups;
+  for (const inv of v.invitations) {
+    const row = el("div", "row invitation");
+    const yes = el("button", null, "accept");
+    yes.addEventListener("click", () => groupOp({ op: "accept", group: inv.group, nickname: saved("nickname") }));
+    const no = el("button", null, "decline");
+    no.addEventListener("click", () => groupOp({ op: "decline", group: inv.group }));
+    row.append(el("span", null, `${inv.from || "#" + inv.peer.slice(-4)} invites you to “${inv.name}” `), yes, no);
+    box.append(row);
+  }
+  for (const g of v.groups) {
+    const b = el("button", "convo" + (state.group === g.id ? " on" : ""),
+      `${g.name} · ${g.members.length} members${g.creator_is_me ? " · yours" : ""}`);
+    b.addEventListener("click", () => { state.group = state.group === g.id ? null : g.id; renderGroups(); });
+    box.append(b);
+  }
+  const g = v.groups.find(x => x.id === state.group);
+  if (g) {
+    const members = el("div", "small");
+    for (const m of g.members) {
+      const row = el("div", "row");
+      row.append(el("span", null, (m.nickname || "?") + (m.me ? " (you)" : "") + (m.creator ? " · creator" : "")));
+      if (g.creator_is_me && !m.me) {
+        const rm = el("button", null, "remove");
+        rm.addEventListener("click", () => groupOp({ op: "remove", group: g.id, fingerprint: m.fingerprint }));
+        row.append(rm);
+      }
+      members.append(row);
+    }
+    box.append(members);
+    const thread = el("div", "thread");
+    for (const m of v.messages.filter(x => x.group === g.id)) {
+      const row = el("div", "msg" + (m.own ? " own" : ""));
+      const body = el("div", "body");
+      textNodes(body, m.content);
+      row.append(el("b", null, m.nickname || "?"), el("span", "muted small", " " + clock(m.created_at)), body);
+      thread.append(row);
+    }
+    const text = el("input", "text");
+    text.placeholder = "message to the group";
+    const send = el("button", null, "Send");
+    const go = async () => {
+      if (!text.value.trim()) return;
+      const { ok } = await groupOp({ op: "send", group: g.id, text: text.value, nickname: saved("nickname") });
+      if (ok) text.value = "";
+    };
+    send.addEventListener("click", go);
+    text.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+    const form = el("div", "composer");
+    form.append(text, send);
+    const end = el("button", null, g.creator_is_me ? "destroy the group" : "leave the group");
+    end.addEventListener("click", () => {
+      if (confirm(g.creator_is_me ? `Destroy “${g.name}” for everyone?` : `Leave “${g.name}”?`)) {
+        groupOp({ op: g.creator_is_me ? "destroy" : "leave", group: g.id });
+        state.group = null;
+      }
+    });
+    box.append(thread, form, end);
+  }
+  const name = el("input");
+  name.placeholder = "new group name";
+  const create = el("button", null, "Create");
+  create.addEventListener("click", async () => {
+    if (!name.value.trim()) return;
+    const { ok } = await groupOp({ op: "create", name: name.value, nickname: saved("nickname") });
+    if (ok) name.value = "";
+  });
+  const form = el("div", "composer");
+  form.append(name, create);
+  box.append(form, el("p", "muted small",
+    "Groups work between consoles, over Nostr; invite someone from a private conversation."));
+}
 
 // --- Saved and scheduled messages ------------------------------------------------
 
@@ -358,6 +464,7 @@ function render() {
   renderCells();
   renderFeed();
   renderDms();
+  renderGroups();
   renderSaved();
 }
 
@@ -366,6 +473,7 @@ function onState(d) {
   state.messages = d.messages;
   state.dms = d.dms;
   state.local = d.local;
+  state.groups = d.groups;
   render();
 }
 
@@ -406,6 +514,11 @@ function connect() {
   });
   on("relay_text", t => { state.texts.push(t); renderCells(); });
   on("local", l => { state.local = l; renderCells(); renderFeed(); renderSaved(); });
+  on("groups", g => { state.groups = g; renderGroups(); renderDms(); });
+  on("group_message", m => {
+    if (!state.groups.messages.some(x => x.group === m.group && x.id === m.id)) state.groups.messages.push(m);
+    renderGroups();
+  });
   source.onerror = () => {
     state.link = "reconnecting";
     updateTop();

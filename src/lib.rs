@@ -11,6 +11,7 @@ pub mod console;
 pub mod db;
 pub mod envelope;
 mod error;
+pub mod groups;
 pub mod identity;
 pub mod lists;
 pub mod nostr;

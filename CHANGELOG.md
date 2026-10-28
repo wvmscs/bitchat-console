@@ -3,9 +3,11 @@
 ## [Unreleased]
 
 ### Fixed
+- Connections no longer wanted are closed 10–40 s later, so that what they still have to send goes out (a message just before an area change, the last envelopes of a group).
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- Mixed groups over Nostr (lot 10): BitChat 1.8 group state and messages byte for byte (`groups`, checked with the app's Swift code), per-group Nostr addresses, consent before joining, the app's rules (pinned creator, epochs, removal by roster), destruction; storage, API (`/api/group`) and page.
 - The console over the map (lot 9, D26): `--map http://…` relays a running bitchat-geohash map at `/` (its Host and Origin, live streams), adds a floating, foldable console panel (the console at `/console/` in a frame) and a "Follow in console" button to the menu of a map cell; 502 when the map is not running.
 - Local storage and moderation (lot 8): SQLite `console.sqlite` (private file, numbered migrations) with muted keys (`set_muted`, hidden in the page, isolation window), saved messages (`add_preset`, `send_preset`) and scheduled messages sent when due (`add_schedule`, once or repeated, missed ones not made up, cells not followed skipped); API and page sections.
 - Page and command line (lot 7): axum server (Host, Origin and CSP checks from bitchat-geohash, optional HTTPS), `/api/state`, `/api/events` (SSE), `/api/area`, `/api/send`, `/api/dm`, `/api/read`; page with the 9 cells, the feed, the composer and private messages (links shown, images never loaded); `bitchat-console` binary (`--teleport`, `--tor-socks` or `--arti`, lists, `--apps`, `--dm-relays`, `--no-presence`, `--pow-bits`, `--listen`, TLS, `--open`).

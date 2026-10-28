@@ -50,6 +50,25 @@ impl Seed {
         // Probability about 10 × 2⁻¹²⁸.
         Err(Error::InvalidGeohash(geohash.to_owned()))
     }
+
+    /// A key for another use than a cell, unlinkable to the cell keys: the
+    /// same derivation with a label that is not a geohash (the app does
+    /// this for its mesh bridge, `"bridge|" + cell`). Groups use
+    /// `"group|" + group ID` (D27).
+    pub fn labelled(&self, label: &str) -> Result<CellKey> {
+        for i in 0u32..10 {
+            let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&self.0).expect("any key size");
+            mac.update(label.as_bytes());
+            mac.update(&i.to_be_bytes());
+            if let Ok(key) = SigningKey::from_bytes(&mac.finalize().into_bytes()) {
+                return Ok(CellKey {
+                    geohash: label.to_owned(),
+                    key,
+                });
+            }
+        }
+        Err(Error::InvalidGeohash(label.to_owned()))
+    }
 }
 
 /// The key the console signs with in one cell.
@@ -207,6 +226,6 @@ fn load_or_create(path: &PathBuf, len: usize) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub(crate) fn hex(bytes: &[u8]) -> String {
+pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

@@ -16,7 +16,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 7 | Serveur web et page console | ✅ |
 | 8 | Masquage, isolation d'un intervenant, messages préenregistrés et planifiés | ✅ |
 | 9 | Superposition à la carte de bitchat-geohash | ✅ |
-| 10 | Groupes mixtes (transport Nostr, entre consoles) | ⬜ |
+| 10 | Groupes mixtes (transport Nostr, entre consoles) | ✅ |
 | 11 | Feature `arti` | ✅ |
 | 12 | Validation réelle | ⬜ |
 
@@ -243,14 +243,42 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       et la console par-dessus (Arti, relais de l'utilisateur), clic sur `#u09ts` →
       « Follow in console » → la console suit `#u09ts`, cadre à jour, console propre.
 
-### Lot 10 : groupes mixtes ⬜
+### Lot 10 : groupes mixtes ✅
 
-- [ ] Format des groupes de BitChat 1.8 (`GroupProtocol.swift`, `GroupStore.swift`) : état
-      signé par le créateur (Ed25519), clé de groupe, messages ChaCha20-Poly1305.
-- [ ] Transport Nostr : paquets de groupe en `bitchat1:` dans l'enveloppe privée, une par
-      membre.
-- [ ] Création, invitation, départ, exclusion et rotation de clé, destruction, entre deux
-      consoles.
+- [x] Format des groupes de BitChat 1.8 (`groups.rs`, depuis `GroupProtocol.swift`) : TLV à
+      longueur sur 16 bits, liste des membres (empreinte, clé Ed25519, pseudo ≤ 64 octets
+      coupé sur un caractère), état signé par le créateur sur `bitchat-group-v1 | id |
+      époque | SHA256(clé) | SHA256(liste) | SHA256(nom)`, messages ChaCha20-Poly1305 (id et
+      époque en données authentifiées) au contenu signé par l'auteur. **Vérifié avec le code
+      Swift de l'app** (`tests/vectors/groups.swift` + `examples/group_vectors.rs`) : l'app
+      décode l'état de la console, valide la signature du créateur (le TLV ajouté est ignoré)
+      et ouvre le message (signature de l'auteur valide).
+- [x] Transport Nostr (D27) : une adresse Nostr par groupe et par console (clé dérivée
+      `group|<id>`, sans lien avec les clés de cellule) ; états et messages en `bitchat1:`
+      dans l'enveloppe privée, un exemplaire par membre ; carnet empreinte → adresse dans un
+      TLV `0x10` que l'app ignore ; invitation avec consentement (demande `0xC0` du créateur,
+      acceptation `0xC1` de l'invité depuis la page, avec son identité Noise et son adresse).
+- [x] Règles de l'app (`applyGroupState`) : état signé par le créateur qu'il nomme, créateur
+      épinglé (empreinte et clé) et, sur Nostr, son adresse ; époque jamais en arrière ;
+      liste sans moi = retrait ; époque + 1 et nouvelle clé à chaque changement de membres ;
+      16 membres au plus ; membre retiré averti avec une clé nulle (comme l'app) ; départ
+      local. **Destruction** (demandée, absente de l'app) : liste réduite au créateur envoyée
+      à tous, puis groupe oublié.
+- [x] Stockage : migration `0002_groups` (état encodé, clé comprise, et adresse épinglée du
+      créateur) dans la base `0600`.
+- [x] **Défauts trouvés par les tests** : boîte de l'adresse d'un groupe accepté mais pas
+      encore reçu ignorée ; derniers envois d'un groupe détruit perdus (connexion fermée
+      aussitôt) → toute connexion qui n'est plus voulue est désormais fermée 10 à 40 s plus
+      tard (vaut aussi pour un message envoyé juste avant un changement de zone).
+- [x] API (`POST /api/group`, `op` : create, invite, accept, decline, send, remove, leave,
+      destroy ; événements `groups`, `group_message`) et page (invitations, groupes, fil,
+      membres, retirer, quitter ou détruire, inviter depuis une conversation privée).
+- [x] Tests : 3 consoles (création, invitation et consentement, messages dans les deux sens,
+      3ᵉ membre et époque 3 pour tous, retrait et impossibilité d'écrire ensuite, refus pour
+      un non-créateur, destruction), refus d'une invitation déclinée. **Essai réel par Tor**
+      sur `relay.famillevital.club` : groupe rejoint en 0,77 s, message en 0,16 s.
+- [ ] Crate Bluetooth (maillage BitChat) et PR vers l'app pour le transport Nostr des
+      groupes : étapes suivantes (D6).
 
 ### Lot 11 : feature `arti` ✅
 
@@ -291,6 +319,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D24 | Tor par défaut | Arti (dans le binaire) quand le binaire est construit avec la feature `arti`, sinon le démon `tor` en SOCKS `127.0.0.1:9050` ; `--tor-socks` ou `--arti` pour choisir — *prise par l'agent, à revoir* | ✅ |
 | D25 | Masqués sur disque | La liste des masqués est enregistrée (clé publique et date seulement, jamais pseudo ni contenu) : c'est un choix volontaire de l'utilisateur, utile après un redémarrage ; la base est en `0600` — *prise par l'agent, à revoir* | ✅ |
 | D26 | Superposition à la carte (remplace la réalisation prévue en D10) | Relais HTTP d'une carte bitchat-geohash lancée à côté (`--map`), panneau flottant injecté dans sa page, bouton « Follow in console » ; raison : conflit de versions SQLite entre bitchat-geohash 0.1.0 et Arti, et bitchat-geohash en lecture seule. Les tuiles de la carte restent chargées par le navigateur en direct (pas par Tor), comme dans bitchat-geohash — *prise par l'agent, à revoir* | ✅ |
+| D27 | Groupes par Nostr | Adresse Nostr par groupe (`group|<id>`), états et messages au format de l'app dans l'enveloppe privée, carnet d'adresses en TLV `0x10` (ignoré par l'app), invitation avec consentement (`0xC0`/`0xC1`, valeurs hors de la plage de l'app), destruction = liste réduite au créateur ; révéler son identité Noise à un groupe relie ses clés de cellule pour ses membres (comme dans l'app) — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -322,3 +351,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 7 | Serveur, API, page, ligne de commande. 48 tests Rust, 4 `node` ; clippy propre avec et sans `arti`. Essai réel du binaire par Tor sur le relais de l'utilisateur, page dans Chrome headless. |
 | 28/10/2026 | 8 | Stockage local, masquage et isolement, préenregistrés, planifiés. Conflit `rusqlite` 0.41 / Arti résolu en 0.40. Base créée en `0644` repérée à l'essai réel → `0600`, test ajouté. 49 tests, 5 `node`, clippy propre avec et sans `arti`. |
 | 28/10/2026 | 9 | Superposition par relais (D26). 52 tests Rust, 5 `node`. Essai réel avec bitchat-geohash et Chrome headless. Commit `84f60f3` poussé par erreur avec 4 avertissements clippy dans `tests/map.rs` (le commit n'attendait pas clippy) : corrigés au commit suivant ; désormais clippy est vérifié avant chaque commit. |
+| 28/10/2026 | 10 | Groupes : format de l'app vérifié par son code Swift, transport Nostr, consentement, règles de l'app, destruction. Deux défauts trouvés et corrigés (boîte d'un groupe en attente, fermeture trop rapide des connexions). 57 tests Rust, 5 `node`, clippy propre avec et sans `arti`. Essai réel par Tor : groupe en 0,77 s, message en 0,16 s. |

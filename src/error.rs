@@ -42,6 +42,8 @@ pub enum Error {
     NotFound(i64),
     #[error("schedule: {0}")]
     Schedule(String),
+    #[error("group: {0}")]
+    Group(String),
     #[error("map: {0}")]
     Map(String),
     #[error("database: {0}")]

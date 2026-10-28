@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::{broadcast, watch};
 
-use crate::console::{Console, ConsoleEvent};
+use crate::console::{Console, ConsoleEvent, GroupOp};
 use crate::error::Error;
 
 #[derive(Clone)]
@@ -63,6 +63,7 @@ impl From<Error> for ApiError {
             Error::ConsoleStopped => (StatusCode::SERVICE_UNAVAILABLE, "stopped"),
             Error::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             Error::Schedule(_) => (StatusCode::BAD_REQUEST, "bad_schedule"),
+            Error::Group(_) => (StatusCode::UNPROCESSABLE_ENTITY, "group"),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         ApiError::new(status, code, message)
@@ -84,7 +85,10 @@ async fn snapshot(console: &Console) -> Result<Value, Error> {
     }
     let dms = console.dms().await?;
     let local = console.local().await?;
-    Ok(json!({ "status": status, "messages": messages, "dms": dms, "local": local }))
+    let groups = console.groups().await?;
+    Ok(
+        json!({ "status": status, "messages": messages, "dms": dms, "local": local, "groups": groups }),
+    )
 }
 
 /// `GET /api/state`.
@@ -130,6 +134,8 @@ pub(crate) async fn events(State(s): State<AppState>) -> Response {
                     ("dm_status", json!({ "id": id, "status": status }))
                 }
                 Ok(ConsoleEvent::Local) => ("local", json!(console.local().await.ok()?)),
+                Ok(ConsoleEvent::Groups) => ("groups", json!(console.groups().await.ok()?)),
+                Ok(ConsoleEvent::GroupMessage(m)) => ("group_message", json!(m)),
                 Ok(ConsoleEvent::RelayText { relay, cell, text }) => (
                     "relay_text",
                     json!({ "relay": relay, "cell": cell, "text": text }),
@@ -318,4 +324,68 @@ pub(crate) async fn delete_schedule(
     Ok(Json(
         json!({ "deleted": s.console.delete_schedule(b.id).await? }),
     ))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct GroupBody {
+    op: String,
+    #[serde(default)]
+    group: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    nickname: String,
+    #[serde(default)]
+    peer: String,
+    #[serde(default)]
+    cell: String,
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    fingerprint: String,
+}
+
+/// `POST /api/group {"op": "create"|"invite"|"accept"|"decline"|"send"|
+/// "remove"|"leave"|"destroy", ...}`.
+pub(crate) async fn group(
+    State(s): State<AppState>,
+    body: Result<Json<GroupBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    let op = match b.op.as_str() {
+        "create" => GroupOp::Create {
+            name: b.name,
+            nickname: b.nickname,
+        },
+        "invite" => GroupOp::Invite {
+            group: b.group,
+            peer: b.peer,
+            cell: b.cell,
+        },
+        "accept" => GroupOp::Accept {
+            group: b.group,
+            nickname: b.nickname,
+        },
+        "decline" => GroupOp::Decline { group: b.group },
+        "send" => GroupOp::Send {
+            group: b.group,
+            text: b.text,
+            nickname: b.nickname,
+        },
+        "remove" => GroupOp::Remove {
+            group: b.group,
+            fingerprint: b.fingerprint,
+        },
+        "leave" => GroupOp::Leave { group: b.group },
+        "destroy" => GroupOp::Destroy { group: b.group },
+        other => {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "bad_request",
+                format!("unknown group operation {other:?}"),
+            ));
+        }
+    };
+    s.console.group(op).await?;
+    Ok(Json(json!({ "ok": true })))
 }

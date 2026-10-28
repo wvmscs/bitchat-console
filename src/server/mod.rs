@@ -114,6 +114,7 @@ fn console_routes(prefix: &str) -> Router<api::AppState> {
         .route(&p("/api/preset/send"), post(api::send_preset))
         .route(&p("/api/schedule"), post(api::add_schedule))
         .route(&p("/api/schedule/delete"), post(api::delete_schedule))
+        .route(&p("/api/group"), post(api::group))
 }
 
 /// Serves the page around a running console.

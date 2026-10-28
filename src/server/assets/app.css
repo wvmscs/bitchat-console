@@ -46,7 +46,8 @@ a.image::before { content: "🖼 "; }
             background: var(--bg); }
 .composer .text { flex: 1 1 200px; min-width: 0; }
 
-#dms h2, #saved h2 { font-size: 15px; margin: 4px 0; }
+#dms h2, #saved h2, #groups h2 { font-size: 15px; margin: 4px 0; }
+.invitation { padding: 4px 6px; border: 1px dashed var(--accent); border-radius: 6px; }
 h3 { font-size: 13px; margin: 10px 0 4px; }
 .row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; margin: 3px 0; }
 .mute { border: 0; background: none; padding: 0 4px; opacity: .5; }
