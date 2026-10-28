@@ -40,7 +40,7 @@ ci-dessus (§1), qui couvre aussi Android.
 | Groupes (1.8) | `ChatGroupCoordinator` : invitations et clés signées Noise (paquets `groupInvite` 0x06, `groupKeyUpdate` 0x07), transport `MeshGroupMessaging` = **Bluetooth (BLEService) uniquement** | groupes mixtes Bluetooth + Nostr, mêmes paquets (D6) |
 | Paquets BitChat dans Nostr | l'app transporte déjà des paquets BitChat binaires dans ses DM Nostr : `bitchat1:` + base64url d'un `BitchatPacket` (`NostrEmbeddedBitChat`) | support des paquets de groupe par Nostr (D6) |
 | Images | transferts de fichiers par le maillage Bluetooth uniquement ; un canal geohash ne transporte que du texte | images = liens (D9) |
-| AUTH (NIP-42), CLOSED | ignorés | lus et affichés (la console, elle, sait dire pourquoi un relais refuse) |
+| AUTH (NIP-42), CLOSED | ignorés | lus et affichés (la console, elle, sait dire pourquoi un relais refuse) ; AUTH accepté avec la clé de la connexion (D28) |
 
 ## Principes
 

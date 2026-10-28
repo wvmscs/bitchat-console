@@ -4,7 +4,9 @@
 //! (stored events, `EOSE`, then live events; a REQ with an existing id
 //! replaces it) and `CLOSE`. Like real relays, it forwards the ephemeral
 //! kinds (20000–29999, so BitChat's 20000/20001) live without storing them.
-//! No NIP-42, no limits.
+//! No limits. NIP-42 on request ([`TestRelay::spawn_auth`]): a challenge
+//! at connection, REQ and EVENT refused with `auth-required:` until an AUTH
+//! answers it, and optionally a list of the authors allowed to write.
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -27,10 +29,28 @@ struct Sub {
     out: mpsc::UnboundedSender<String>,
 }
 
+/// NIP-42 behaviour of the test relay.
+#[derive(Clone, Default, PartialEq)]
+pub enum AuthMode {
+    #[default]
+    Open,
+    /// Like relay.damus.io for private messages: authenticate first.
+    Required,
+    /// Authentication for writing only, the challenge sent with the first
+    /// refusal (some relays wait until it is needed).
+    WriteLater,
+    /// Like relay.mmwaves.de: authenticate, and only these authors write.
+    Whitelist(Vec<String>),
+}
+
 #[derive(Default)]
 struct Shared {
     stored: Mutex<Vec<Event>>,
     subs: Mutex<Vec<Sub>>,
+    auth: AuthMode,
+    /// Accepted AUTH events, and EVENT frames received, by event id.
+    auths: AtomicUsize,
+    received: Mutex<Vec<String>>,
 }
 
 impl Shared {
@@ -60,9 +80,17 @@ pub struct TestRelay {
 impl TestRelay {
     /// Binds (`"127.0.0.1:0"` picks a free port) and serves in the background.
     pub async fn spawn(bind: &str) -> std::io::Result<Self> {
+        Self::spawn_auth(bind, AuthMode::Open).await
+    }
+
+    /// The same, with NIP-42.
+    pub async fn spawn_auth(bind: &str, auth: AuthMode) -> std::io::Result<Self> {
         let listener = TcpListener::bind(bind).await?;
         let addr = listener.local_addr()?;
-        let shared = Arc::new(Shared::default());
+        let shared = Arc::new(Shared {
+            auth,
+            ..Shared::default()
+        });
         let (stop, stop_rx) = watch::channel(false);
         let s = shared.clone();
         let task = tokio::spawn(async move {
@@ -100,6 +128,22 @@ impl TestRelay {
         self.shared.publish(e).expect("test event must verify");
     }
 
+    /// AUTH events accepted so far.
+    pub fn auths(&self) -> usize {
+        self.shared.auths.load(Ordering::SeqCst)
+    }
+
+    /// How many times a client sent the event `id`.
+    pub fn received(&self, id: &str) -> usize {
+        self.shared
+            .received
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|i| *i == id)
+            .count()
+    }
+
     /// Stops accepting and closes every connection.
     pub async fn shutdown(self) {
         let _ = self.stop.send(true);
@@ -118,6 +162,20 @@ async fn serve(
     };
     let (mut sink, mut source) = ws.split();
     let (out, mut out_rx) = mpsc::unbounded_channel::<String>();
+    let challenge = format!("challenge-{conn}");
+    let mut authed: Option<String> = None;
+    let mut challenged = false;
+    if !matches!(shared.auth, AuthMode::Open | AuthMode::WriteLater) {
+        let _ = out.send(json!(["AUTH", challenge]).to_string());
+        challenged = true;
+    }
+    // The challenge after a refusal, when not sent yet.
+    let challenge_now = |challenged: &mut bool| {
+        if !*challenged {
+            let _ = out.send(json!(["AUTH", challenge]).to_string());
+            *challenged = true;
+        }
+    };
     let writer = tokio::spawn(async move {
         while let Some(text) = out_rx.recv().await {
             if sink.send(Message::text(text)).await.is_err() {
@@ -142,17 +200,50 @@ async fn serve(
                         let reply = match frame.get(1).map(|v| serde_json::from_value::<Event>(v.clone())) {
                             Some(Ok(e)) => {
                                 let id = e.id.clone();
-                                match shared.publish(e) {
+                                shared.received.lock().unwrap().push(id.clone());
+                                let refusal = match (&shared.auth, &authed) {
+                                    (AuthMode::Open, _) => None,
+                                    (_, None) => Some("auth-required: please authenticate"),
+                                    (AuthMode::Whitelist(ok), Some(_)) if !ok.contains(&e.pubkey) => {
+                                        Some("auth-required: event author pubkey not in whitelist")
+                                    }
+                                    _ => None,
+                                };
+                                match refusal.map_or_else(|| shared.publish(e), Err) {
                                     Ok(()) => json!(["OK", id, true, ""]),
-                                    Err(why) => json!(["OK", id, false, why]),
+                                    Err(why) => {
+                                        if why.starts_with("auth-required") {
+                                            let _ = out.send(json!(["OK", id, false, why]).to_string());
+                                            challenge_now(&mut challenged);
+                                            continue;
+                                        }
+                                        json!(["OK", id, false, why])
+                                    }
                                 }
                             }
                             _ => json!(["NOTICE", "invalid: malformed EVENT"]),
                         };
                         let _ = out.send(reply.to_string());
                     }
+                    Some("AUTH") => {
+                        let Some(Ok(e)) = frame.get(1).map(|v| serde_json::from_value::<Event>(v.clone())) else { continue };
+                        let ok = e.kind == 22242
+                            && e.verify().is_ok()
+                            && e.tag_value("challenge") == Some(challenge.as_str())
+                            && e.tag_value("relay").is_some();
+                        if ok {
+                            shared.auths.fetch_add(1, Ordering::SeqCst);
+                            authed = Some(e.pubkey.clone());
+                        }
+                        let _ = out.send(json!(["OK", e.id, ok, if ok { "" } else { "invalid: bad AUTH" }]).to_string());
+                    }
                     Some("REQ") => {
                         let Some(id) = frame.get(1).and_then(Value::as_str).map(str::to_owned) else { continue };
+                        if !matches!(shared.auth, AuthMode::Open | AuthMode::WriteLater) && authed.is_none() {
+                            let _ = out.send(json!(["CLOSED", id, "auth-required: requested filter requires authentication"]).to_string());
+                            challenge_now(&mut challenged);
+                            continue;
+                        }
                         let filters: Vec<Filter> = frame[2..].iter().filter_map(Filter::from_json).collect();
                         let mut subs = shared.subs.lock().unwrap();
                         subs.retain(|s| !(s.conn == conn && s.id == id));

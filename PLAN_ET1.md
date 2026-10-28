@@ -94,7 +94,8 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       `#g:[cellule]`, `since: −1 h`, `limit: 200` (comme les apps). Client de relais
       (`relay.rs`) : WebSocket sur le flux Tor, TLS (racines du web), reconnexion de 1 s à
       5 min (×2), file des publications pendant les coupures, `CLOSED auth-required:` →
-      abandon (l'identité d'une cellule ne peut pas s'authentifier).
+      abandon (l'identité d'une cellule ne peut pas s'authentifier). *Remplacé par D28 :
+      authentification NIP-42 avec la clé de la connexion.*
 - [x] Contrôles : kind, cellule du `g` = cellule de la connexion, limites des tags, puis
       déduplication par id, puis id et signature ; un événement n'est marqué « vu » qu'une
       fois valide (**défaut trouvé par les tests** : sinon un relais qui l'envoie d'abord sur
@@ -352,6 +353,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D25 | Masqués sur disque | La liste des masqués est enregistrée (clé publique et date seulement, jamais pseudo ni contenu) : c'est un choix volontaire de l'utilisateur, utile après un redémarrage ; la base est en `0600` — *prise par l'agent, à revoir* | ✅ |
 | D26 | Superposition à la carte (remplace la réalisation prévue en D10) | Relais HTTP d'une carte bitchat-geohash lancée à côté (`--map`), panneau flottant injecté dans sa page, bouton « Follow in console » ; raison : conflit de versions SQLite entre bitchat-geohash 0.1.0 et Arti, et bitchat-geohash en lecture seule. Les tuiles de la carte restent chargées par le navigateur en direct (pas par Tor), comme dans bitchat-geohash — *prise par l'agent, à revoir* | ✅ |
 | D27 | Groupes par Nostr | Adresse Nostr par groupe (`group|<id>`), états et messages au format de l'app dans l'enveloppe privée, carnet d'adresses en TLV `0x10` (ignoré par l'app), invitation avec consentement (`0xC0`/`0xC1`, valeurs hors de la plage de l'app), destruction = liste réduite au créateur ; révéler son identité Noise à un groupe relie ses clés de cellule pour ses membres (comme dans l'app) — *prise par l'agent, à revoir* | ✅ |
+| D28 | Relais exigeant NIP-42 | **Décision de l'utilisateur (28/10/2026)** : la console répond au défi AUTH avec la clé de la connexion (celle de la cellule, ou du groupe), qui est déjà l'auteur de ce qu'elle publie et le destinataire de ce qu'elle lit sur cette connexion, sur son propre circuit Tor : l'authentification ne révèle rien de plus au relais. Après acceptation : abonnement renvoyé, publications refusées pour `auth-required:` renvoyées une fois. Un refus après authentification (liste blanche) est définitif, sans boucle ; un AUTH refusé abandonne le relais | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -390,3 +392,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 12 | Essai avec l'app signalé par l'utilisateur : la page reprenait le focus à chaque événement (saisie et sélection presque impossibles). Les champs gardent valeur, focus et curseur ; une section attend qu'aucun bouton ne soit tenu et qu'aucun texte n'y soit sélectionné. Vérifié dans Chrome headless (50 rendus pendant 20 s de saisie). |
 | 28/10/2026 | 12 | Essai avec l'app dans `u09tv` : messages de canal et DM dans les deux sens. Évolutions demandées : identifiant de la console dans chaque cellule, liste des participants de la cellule courante (`Console::participants`, `GET /api/participants`, pseudo, téléporté, nombre de messages, dernière activité ; en mémoire seulement), avec DM et mise en sourdine depuis la liste. |
 | 28/10/2026 | 12 | Signalé : « impossible de suivre #u0 ». Le serveur suit bien `u0` (217 participants, 28 messages en une minute) ; c'est la page : le champ perdait le focus à l'appui sur « Follow » et une mise à jour y remettait le centre avant le clic. Corrigé, vérifié dans Chrome headless. Messages des relais expliqués : damus exige AUTH (NIP-42) pour lire les DM et bannit par IP (sortie Tor partagée), relay.mmwaves.de n'accepte que des auteurs en liste blanche, nostr21.com refuse les DM (1059). |
+| 28/10/2026 | 12 | D28 (décision de l'utilisateur) : authentification NIP-42 avec la clé de la connexion, renvoi de l'abonnement et des publications refusées, une fois. Relais de test avec NIP-42 (exigé à la connexion, pour l'écriture au premier refus, liste blanche) ; `tests/auth.rs`. |

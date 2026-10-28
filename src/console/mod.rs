@@ -874,12 +874,16 @@ impl State {
     }
 
     fn connect(&mut self, relay: String, cell: String, filters: Vec<Filter>) {
+        // NIP-42 with the connection's own key (D28): the key it already
+        // reads and writes for, on its own circuit.
+        let auth = self.label_key(&cell).ok().map(|k| k.signing_key().clone());
         let handle = relay::spawn(
             relay.clone(),
             cell.clone(),
             filters,
             self.config.connector.clone(),
             self.relay_tx.clone(),
+            auth,
         );
         self.conns.insert((relay, cell), handle);
     }
@@ -1330,7 +1334,12 @@ impl State {
                     });
                 }
             }
-            RelayEvent::Eose { .. } | RelayEvent::Auth { .. } => {}
+            RelayEvent::Authenticated { relay, cell } => self.emit(ConsoleEvent::RelayText {
+                relay,
+                cell,
+                text: "authenticated (NIP-42)".into(),
+            }),
+            RelayEvent::Eose { .. } => {}
         }
     }
 

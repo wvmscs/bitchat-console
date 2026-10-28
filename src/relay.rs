@@ -4,10 +4,12 @@
 //! Each connection is a task. It reports everything to the console on one
 //! channel ([`RelayEvent`]) and takes [`RelayHandle`] commands.
 
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
+use k256::schnorr::SigningKey;
 use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -25,8 +27,8 @@ pub enum ConnState {
     Waiting {
         retry_in_secs: u64,
     },
-    /// Given up: the relay requires authentication (NIP-42), which BitChat
-    /// identities cannot give (no history, one key per cell).
+    /// Given up: the relay requires authentication (NIP-42) and refused
+    /// it, or there is no key to give it.
     Abandoned {
         reason: String,
     },
@@ -67,8 +69,34 @@ pub enum RelayEvent {
         cell: String,
         reason: String,
     },
-    /// The relay asked for NIP-42 authentication; never answered.
-    Auth { relay: String, cell: String },
+    /// The relay accepted the NIP-42 authentication (D28).
+    Authenticated { relay: String, cell: String },
+}
+
+/// NIP-42 authentication event.
+pub const KIND_AUTH: u32 = 22242;
+
+/// Publications kept to be sent again after authentication.
+const RECENT: usize = 64;
+
+/// The NIP-42 answer to `challenge` from `relay`, signed with `key`.
+pub fn auth_event(key: &SigningKey, relay: &str, challenge: &str, created_at: i64) -> Event {
+    Event::signed(
+        key,
+        created_at,
+        KIND_AUTH,
+        vec![
+            vec!["relay".into(), relay.into()],
+            vec!["challenge".into(), challenge.into()],
+        ],
+        String::new(),
+    )
+}
+
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
 }
 
 enum Cmd {
@@ -104,16 +132,18 @@ impl Drop for RelayHandle {
 pub const BACKOFF_MIN: Duration = Duration::from_secs(1);
 pub const BACKOFF_MAX: Duration = Duration::from_secs(300);
 
-/// Starts a connection to `url` for `cell`.
+/// Starts a connection to `url` for `cell`. With `auth`, the key of the
+/// connection (the cell's, or a group's), it answers NIP-42 challenges (D28).
 pub fn spawn(
     url: String,
     cell: String,
     filters: Vec<Filter>,
     connector: Arc<dyn Connector>,
     events: mpsc::UnboundedSender<RelayEvent>,
+    auth: Option<SigningKey>,
 ) -> RelayHandle {
     let (tx, rx) = mpsc::unbounded_channel();
-    let task = tokio::spawn(run(url, cell, filters, connector, events, rx));
+    let task = tokio::spawn(run(url, cell, filters, connector, events, rx, auth));
     RelayHandle { tx, task }
 }
 
@@ -172,6 +202,7 @@ async fn run(
     connector: Arc<dyn Connector>,
     events: mpsc::UnboundedSender<RelayEvent>,
     mut rx: mpsc::UnboundedReceiver<Cmd>,
+    auth: Option<SigningKey>,
 ) {
     let state = |s: ConnState| {
         let _ = events.send(RelayEvent::State {
@@ -212,12 +243,29 @@ async fn run(
                     msg.extend(filters.iter().map(Filter::to_json));
                     WsMessage::text(Value::Array(msg).to_string())
                 };
+                let event_msg = |e: &Event| WsMessage::text(json!(["EVENT", e]).to_string());
+                // NIP-42, for this session: the AUTH sent, its outcome, what
+                // waits for it.
+                let mut auth_id: Option<String> = None;
+                let mut authed = false;
+                let mut resubscribe = false;
+                let mut recent: VecDeque<Event> = VecDeque::new();
+                let mut waiting: Vec<Event> = Vec::new();
+                let mut retried: HashSet<String> = HashSet::new();
+                let remember = |e: &Event, recent: &mut VecDeque<Event>| {
+                    if auth.is_some() {
+                        recent.push_back(e.clone());
+                        if recent.len() > RECENT {
+                            recent.pop_front();
+                        }
+                    }
+                };
                 // A connection for writing only (presence) subscribes to nothing.
                 let mut alive = filters.is_empty() || sink.send(req(&filters)).await.is_ok();
                 for e in queue.drain(..) {
                     if alive {
-                        let text = json!(["EVENT", e]).to_string();
-                        alive = sink.send(WsMessage::text(text)).await.is_ok();
+                        remember(&e, &mut recent);
+                        alive = sink.send(event_msg(&e)).await.is_ok();
                     }
                 }
                 while alive {
@@ -225,8 +273,8 @@ async fn run(
                         cmd = rx.recv() => match cmd {
                             None => return,
                             Some(Cmd::Publish(e)) => {
-                                let text = json!(["EVENT", e]).to_string();
-                                if sink.send(WsMessage::text(text)).await.is_err() {
+                                remember(&e, &mut recent);
+                                if sink.send(event_msg(&e)).await.is_err() {
                                     queue.push(e);
                                     alive = false;
                                 }
@@ -238,9 +286,63 @@ async fn run(
                         },
                         msg = source.next() => match msg {
                             Some(Ok(WsMessage::Text(text))) => {
-                                if let Some(abandon) = on_message(&text, &url, &cell, &events) {
-                                    state(ConnState::Abandoned { reason: abandon });
-                                    return;
+                                let report = |e: RelayEvent| { let _ = events.send(e); };
+                                let (relay, c) = (url.clone(), cell.clone());
+                                match parse(&text, &url, &cell) {
+                                    None => {}
+                                    Some(Incoming::Report(e)) => report(e),
+                                    Some(Incoming::Challenge(challenge)) => {
+                                        let Some(key) = &auth else { continue };
+                                        let e = auth_event(key, &url, &challenge, now());
+                                        auth_id = Some(e.id.clone());
+                                        let msg = WsMessage::text(json!(["AUTH", e]).to_string());
+                                        alive = sink.send(msg).await.is_ok();
+                                    }
+                                    Some(Incoming::Closed(reason)) => {
+                                        let needs_auth = reason.starts_with("auth-required:");
+                                        report(RelayEvent::Closed { relay, cell: c, reason: reason.clone() });
+                                        if needs_auth {
+                                            if auth.is_none() || authed {
+                                                state(ConnState::Abandoned { reason });
+                                                return;
+                                            }
+                                            resubscribe = true;
+                                        }
+                                    }
+                                    Some(Incoming::Ok { id, accepted, message }) => {
+                                        if auth_id.as_deref() == Some(id.as_str()) {
+                                            if !accepted {
+                                                state(ConnState::Abandoned {
+                                                    reason: format!("authentication refused: {message}"),
+                                                });
+                                                return;
+                                            }
+                                            authed = true;
+                                            report(RelayEvent::Authenticated { relay, cell: c });
+                                            if resubscribe && !filters.is_empty() {
+                                                alive = sink.send(req(&filters)).await.is_ok();
+                                            }
+                                            for e in waiting.drain(..) {
+                                                if alive {
+                                                    alive = sink.send(event_msg(&e)).await.is_ok();
+                                                }
+                                            }
+                                            continue;
+                                        }
+                                        // Refused for want of authentication: sent
+                                        // again once, after it.
+                                        if !accepted
+                                            && message.starts_with("auth-required:")
+                                            && auth.is_some()
+                                            && !authed
+                                            && retried.insert(id.clone())
+                                            && let Some(e) = recent.iter().find(|e| e.id == id)
+                                        {
+                                            waiting.push(e.clone());
+                                            continue;
+                                        }
+                                        report(RelayEvent::Ok { relay, cell: c, id, accepted, message });
+                                    }
                                 }
                             }
                             Some(Ok(WsMessage::Ping(p))) => {
@@ -276,13 +378,22 @@ async fn run(
     }
 }
 
-/// Handles one relay message; returns a reason to give up on the relay.
-fn on_message(
-    text: &str,
-    relay: &str,
-    cell: &str,
-    events: &mpsc::UnboundedSender<RelayEvent>,
-) -> Option<String> {
+/// A relay message, sorted: what only goes up, and what the connection
+/// itself acts on.
+enum Incoming {
+    Report(RelayEvent),
+    /// NIP-42 challenge.
+    Challenge(String),
+    /// The subscription was closed, with this reason.
+    Closed(String),
+    Ok {
+        id: String,
+        accepted: bool,
+        message: String,
+    },
+}
+
+fn parse(text: &str, relay: &str, cell: &str) -> Option<Incoming> {
     let Ok(Value::Array(msg)) = serde_json::from_str::<Value>(text) else {
         return None;
     };
@@ -293,39 +404,26 @@ fn on_message(
             .to_owned()
     };
     let (relay, cell) = (relay.to_owned(), cell.to_owned());
-    let report = match s(0).as_str() {
+    Some(match s(0).as_str() {
         "EVENT" => match msg.get(2).cloned().map(serde_json::from_value::<Event>) {
-            Some(Ok(event)) => RelayEvent::Event { relay, cell, event },
+            Some(Ok(event)) => Incoming::Report(RelayEvent::Event { relay, cell, event }),
             _ => return None,
         },
-        "EOSE" => RelayEvent::Eose { relay, cell },
-        "OK" => RelayEvent::Ok {
-            relay,
-            cell,
+        "EOSE" => Incoming::Report(RelayEvent::Eose { relay, cell }),
+        "OK" => Incoming::Ok {
             id: s(1),
             accepted: msg.get(2).and_then(Value::as_bool).unwrap_or(false),
             message: s(3),
         },
-        "NOTICE" => RelayEvent::Notice {
+        "NOTICE" => Incoming::Report(RelayEvent::Notice {
             relay,
             cell,
             text: s(1),
-        },
-        "CLOSED" => {
-            let reason = s(2);
-            let auth = reason.starts_with("auth-required:");
-            let _ = events.send(RelayEvent::Closed {
-                relay,
-                cell,
-                reason: reason.clone(),
-            });
-            return auth.then_some(reason);
-        }
-        "AUTH" => RelayEvent::Auth { relay, cell },
+        }),
+        "CLOSED" => Incoming::Closed(s(2)),
+        "AUTH" => Incoming::Challenge(s(1)),
         _ => return None,
-    };
-    let _ = events.send(report);
-    None
+    })
 }
 
 #[cfg(test)]
