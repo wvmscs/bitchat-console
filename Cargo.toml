@@ -41,7 +41,8 @@ serde_json = "1"
 rusqlite = { version = "0.40", features = ["bundled"] }
 # Web server and page (lot 7), as in bitchat-geohash.
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "json", "query"] }
-hyper = { version = "1", features = ["server", "http1", "http2"] }
+hyper = { version = "1", features = ["server", "client", "http1", "http2"] }
+http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["server-auto", "tokio", "service"] }
 rustls-pki-types = { version = "1.9", features = ["std"] }
 # Tor in the binary (lot 11, feature `arti`), like the iOS app.

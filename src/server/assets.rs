@@ -29,6 +29,8 @@ const ALL: &[Asset] = &[
     asset!("app.js", JS),
     asset!("view.js", JS),
     asset!("app.css", CSS),
+    asset!("overlay.js", JS),
+    asset!("overlay.css", CSS),
 ];
 
 impl Asset {

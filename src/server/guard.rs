@@ -86,8 +86,9 @@ fn allowed_hosts(addr: SocketAddr) -> Option<Vec<String>> {
 
 /// Everything from the server only. Images in messages are shown as links,
 /// never loaded (D9): a picture would tell its host who reads the channel.
+/// Framed only by itself (the panel over the map, lot 9).
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; \
-     connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+     connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 
 pub(crate) async fn guard(State(g): State<Arc<Guard>>, req: Request, next: Next) -> Response {
     // HTTP/2 carries the host in the URI (`:authority`), not in `Host`.
@@ -122,7 +123,11 @@ pub(crate) async fn guard(State(g): State<Arc<Guard>>, req: Request, next: Next)
     }
     let mut resp = next.run(req).await;
     let h = resp.headers_mut();
-    h.insert(header::CONTENT_SECURITY_POLICY, g.csp.clone());
+    // A relayed map page keeps its own policy (its tiles), extended by the
+    // relay; everything else gets the console's.
+    if !h.contains_key(header::CONTENT_SECURITY_POLICY) {
+        h.insert(header::CONTENT_SECURITY_POLICY, g.csp.clone());
+    }
     h.insert(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),

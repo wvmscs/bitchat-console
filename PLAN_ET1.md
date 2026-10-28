@@ -15,7 +15,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 6 | Messages privés (enveloppe BitChat `v2:`, relais par défaut) | ✅ |
 | 7 | Serveur web et page console | ✅ |
 | 8 | Masquage, isolation d'un intervenant, messages préenregistrés et planifiés | ✅ |
-| 9 | Superposition à la carte de bitchat-geohash | ⬜ |
+| 9 | Superposition à la carte de bitchat-geohash | ✅ |
 | 10 | Groupes mixtes (transport Nostr, entre consoles) | ⬜ |
 | 11 | Feature `arti` | ✅ |
 | 12 | Validation réelle | ⬜ |
@@ -220,11 +220,28 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       zone ignorée, refus ; 5 tests `node`. Essai du binaire réel (Arti, relais de
       l'utilisateur) : sections présentes, message enregistré puis envoyé depuis la page.
 
-### Lot 9 : superposition à la carte ⬜
+### Lot 9 : superposition à la carte ✅
 
-- [ ] Dépendance git sur bitchat-geohash `v0.1.0` : moniteur et carte dans le même binaire.
-- [ ] Console en panneau flottant au-dessus de la carte ; un clic sur une cellule choisit le
-      geohash et met la console à jour (D10).
+- [x] **Autrement que prévu en D10** (D26) : bitchat-geohash 0.1.0 (`rusqlite` 0.41) et Arti
+      (`rusqlite` < 0.41) ne peuvent pas être liés dans un même binaire (une seule bibliothèque
+      sqlite3), et bitchat-geohash reste intact. La console **relaie** donc une carte
+      bitchat-geohash qui tourne à côté : `--map http://127.0.0.1:8080`.
+- [x] Relais (`server/map.rs`, client HTTP/1 de `hyper`) : tout ce qui n'est pas la console
+      va à la carte, avec son propre `Host` et, pour ses commandes, son propre `Origin` (la
+      console contrôle d'abord l'origine réelle) ; flux SSE de la carte relayés au fil de
+      l'eau ; carte absente → 502 `map_unreachable`, la console continue.
+- [x] Page de la carte : la console y ajoute `overlay.js` et `overlay.css` et autorise son
+      cadre (`frame-src 'self'` ajouté à la CSP de la carte, qui garde ses tuiles) ; panneau
+      flottant (repliable, redimensionnable) avec la console (`/console/`) dans un cadre ;
+      bouton « Follow in console » ajouté au menu d'une cellule de la carte : la console suit
+      ce geohash (avec le choix « teleported » de la console).
+- [x] Console servie aussi sous `/console/` (chemins relatifs) ; elle accepte d'être encadrée
+      par elle-même seulement (`frame-ancestors 'self'`).
+- [x] Tests (`tests/map.rs`, carte simulée qui contrôle `Host` et `Origin` comme
+      bitchat-geohash) : injection, CSP, console sous `/console/`, commande relayée, refus d'une
+      autre origine, flux SSE continu, carte absente. Essai réel : bitchat-geohash sur `u09t`
+      et la console par-dessus (Arti, relais de l'utilisateur), clic sur `#u09ts` →
+      « Follow in console » → la console suit `#u09ts`, cadre à jour, console propre.
 
 ### Lot 10 : groupes mixtes ⬜
 
@@ -273,6 +290,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D23 | Paquets compressés reçus | Lecture des charges compressées (DEFLATE brut, comme `CompressionUtil`) avec la petite crate `miniz_oxide` (hors D15), bornée en taille et en taux ; à l'envoi, pas de compression (l'app lit les deux, et rien n'en paraît hors de l'enveloppe) — *prise par l'agent, à revoir* | ✅ |
 | D24 | Tor par défaut | Arti (dans le binaire) quand le binaire est construit avec la feature `arti`, sinon le démon `tor` en SOCKS `127.0.0.1:9050` ; `--tor-socks` ou `--arti` pour choisir — *prise par l'agent, à revoir* | ✅ |
 | D25 | Masqués sur disque | La liste des masqués est enregistrée (clé publique et date seulement, jamais pseudo ni contenu) : c'est un choix volontaire de l'utilisateur, utile après un redémarrage ; la base est en `0600` — *prise par l'agent, à revoir* | ✅ |
+| D26 | Superposition à la carte (remplace la réalisation prévue en D10) | Relais HTTP d'une carte bitchat-geohash lancée à côté (`--map`), panneau flottant injecté dans sa page, bouton « Follow in console » ; raison : conflit de versions SQLite entre bitchat-geohash 0.1.0 et Arti, et bitchat-geohash en lecture seule. Les tuiles de la carte restent chargées par le navigateur en direct (pas par Tor), comme dans bitchat-geohash — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -303,3 +321,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 6 | DM : `packet.rs`, `envelope.rs` (vecteurs identiques au code Swift de l'app), boîtes de réception, accusés. Les tests et l'essai réel n'utilisent jamais les relais par défaut réels (relais de test, ou celui de l'utilisateur). 39 tests (+ réels), clippy propre avec et sans `arti`. Essai réel par Tor : DM en 0,26 s, accusé en 0,37 s. Reste l'essai avec l'app (lot 12). |
 | 28/10/2026 | 7 | Serveur, API, page, ligne de commande. 48 tests Rust, 4 `node` ; clippy propre avec et sans `arti`. Essai réel du binaire par Tor sur le relais de l'utilisateur, page dans Chrome headless. |
 | 28/10/2026 | 8 | Stockage local, masquage et isolement, préenregistrés, planifiés. Conflit `rusqlite` 0.41 / Arti résolu en 0.40. Base créée en `0644` repérée à l'essai réel → `0600`, test ajouté. 49 tests, 5 `node`, clippy propre avec et sans `arti`. |
+| 28/10/2026 | 9 | Superposition par relais (D26). 53 tests, 5 `node` ; clippy propre avec et sans `arti`. Essai réel avec bitchat-geohash et Chrome headless. |

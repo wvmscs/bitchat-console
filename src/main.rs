@@ -6,7 +6,10 @@
 //!       [--android-csv <url|path> | --no-android] [--apps both|ios|android]
 //!       [--dm-relays <url,url>]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
-//!       [--tls-cert <pem> --tls-key <pem>] [--open] [--verbose]
+//!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
+//!
+//! With `--map`, a running bitchat-geohash map is served at `/` with the
+//! console floating over it (lot 9).
 //!
 //! Exit code 2 for a wrong command line, 1 when the console cannot start.
 
@@ -26,7 +29,7 @@ const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <
      [--android-csv <url|path> | --no-android] [--apps both|ios|android] \
      [--dm-relays <url,url>] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
-     [--tls-cert <pem> --tls-key <pem>] [--open] [--verbose]";
+     [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
 
 /// Which Tor (D1, D24).
 #[derive(Debug, Clone, PartialEq)]
@@ -144,6 +147,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                     .map_err(|_| format!("--listen: address:port expected, got {v:?}"))?
             }
             "--allow-remote" => a.server.allow_remote = true,
+            "--map" => a.server.map = Some(value()?),
             "--tls-cert" => cert = Some(value()?.into()),
             "--tls-key" => key = Some(value()?.into()),
             "--open" => a.open = true,

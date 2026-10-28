@@ -31,6 +31,8 @@ const state = {
 const saved = key => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
 const save = (key, v) => { try { localStorage.setItem(key, v); } catch { /* private window */ } };
 
+// Paths are relative: the page is served at `/`, or at `/console/` over the
+// map of bitchat-geohash (lot 9).
 async function command(path, body) {
   try {
     const r = await fetch(path, {
@@ -76,7 +78,7 @@ async function follow() {
   if (!geohash) return;
   save("teleport", ui.teleport.checked ? "1" : "0");
   ui.error.textContent = "";
-  const { ok, data } = await command("/api/area", { geohash, teleport: ui.teleport.checked });
+  const { ok, data } = await command("api/area", { geohash, teleport: ui.teleport.checked });
   if (!ok) ui.error.textContent = (data && data.message) || "refused";
   state.selected = null;
 }
@@ -124,7 +126,7 @@ function renderCells() {
       show.title = "show only this person's messages";
       show.addEventListener("click", () => { state.isolate = key; renderFeed(); });
       const un = el("button", null, "unmute");
-      un.addEventListener("click", () => command("/api/mute", { pubkey: key, muted: false }));
+      un.addEventListener("click", () => command("api/mute", { pubkey: key, muted: false }));
       row.append(el("span", null, "#" + key.slice(-4) + " "), show, un);
       m.append(row);
     }
@@ -186,7 +188,7 @@ function renderFeed() {
       const mute = el("button", "mute", "🔇");
       mute.title = "mute: hide everything from this key";
       mute.setAttribute("aria-label", "mute");
-      mute.addEventListener("click", () => command("/api/mute", { pubkey: m.pubkey, muted: true }));
+      mute.addEventListener("click", () => command("api/mute", { pubkey: m.pubkey, muted: true }));
       row.append(mute);
     }
     row.append(body);
@@ -218,7 +220,7 @@ function composer() {
   const go = async () => {
     if (!text.value.trim()) return;
     send.disabled = true;
-    const { ok, data } = await command("/api/send", { text: text.value, cell: cell.value, nickname: nick.value.trim() || null });
+    const { ok, data } = await command("api/send", { text: text.value, cell: cell.value, nickname: nick.value.trim() || null });
     send.disabled = false;
     if (ok) text.value = ""; else result.textContent = (data && data.message) || "refused";
   };
@@ -232,7 +234,7 @@ function composer() {
 
 function openConvo(peer, cell) {
   state.convo = peer + "|" + cell;
-  command("/api/read", { peer });
+  command("api/read", { peer });
   render();
 }
 
@@ -269,7 +271,7 @@ function renderDms() {
   const result = el("span", "warn small");
   const go = async () => {
     if (!text.value.trim()) return;
-    const { ok, data } = await command("/api/dm", { peer, cell, text: text.value });
+    const { ok, data } = await command("api/dm", { peer, cell, text: text.value });
     if (ok) text.value = ""; else result.textContent = (data && data.message) || "refused";
   };
   send.addEventListener("click", go);
@@ -290,12 +292,12 @@ function renderSaved() {
     const row = el("div", "row");
     const send = el("button", null, "send");
     send.addEventListener("click", async () => {
-      const { ok, data } = await command("/api/preset/send", { id: p.id, cell: state.selected });
+      const { ok, data } = await command("api/preset/send", { id: p.id, cell: state.selected });
       if (!ok) alert((data && data.message) || "refused");
     });
     const del = el("button", null, "×");
     del.title = "delete";
-    del.addEventListener("click", () => command("/api/preset/delete", { id: p.id }));
+    del.addEventListener("click", () => command("api/preset/delete", { id: p.id }));
     row.append(el("b", null, p.name || "(no name)"), el("span", "muted small", " " + p.text + " "), send, del);
     box.append(row);
   }
@@ -306,7 +308,7 @@ function renderSaved() {
   const add = el("button", null, "Save");
   add.addEventListener("click", async () => {
     if (!text.value.trim()) return;
-    const { ok } = await command("/api/preset", { name: name.value, text: text.value, nickname: saved("nickname") || null });
+    const { ok } = await command("api/preset", { name: name.value, text: text.value, nickname: saved("nickname") || null });
     if (ok) { name.value = ""; text.value = ""; }
   });
   const form = el("div", "composer");
@@ -318,7 +320,7 @@ function renderSaved() {
     const row = el("div", "row");
     const del = el("button", null, "×");
     del.title = "delete";
-    del.addEventListener("click", () => command("/api/schedule/delete", { id: sc.id }));
+    del.addEventListener("click", () => command("api/schedule/delete", { id: sc.id }));
     const when = sc.next_at ? clock(sc.next_at) : "done";
     row.append(el("span", null, sc.text + " "),
       el("span", "muted small", `${when} · ${repeatLabel(sc.repeat_secs)}${sc.cell ? " · #" + sc.cell : ""}`
@@ -340,7 +342,7 @@ function renderSaved() {
   plan.addEventListener("click", async () => {
     const when = unixFromLocal(at.value);
     if (!stext.value.trim() || !when) { result.textContent = "text and time needed"; return; }
-    const { ok, data } = await command("/api/schedule", {
+    const { ok, data } = await command("api/schedule", {
       text: stext.value, at: when, repeat_secs: repeat.value ? Number(repeat.value) : null,
       cell: state.selected, nickname: saved("nickname") || null,
     });
@@ -373,7 +375,7 @@ let retry = null;
 function connect() {
   if (source) source.close();
   clearTimeout(retry);
-  source = new EventSource("/api/events");
+  source = new EventSource("api/events");
   const on = (name, f) => source.addEventListener(name, e => { f(JSON.parse(e.data)); });
   on("state", d => { state.link = "live"; onState(d); });
   on("status", s => { state.status = s; updateTop(); renderCells(); });
@@ -395,7 +397,7 @@ function connect() {
   });
   on("dm", dm => {
     state.dms.push(dm);
-    if (!dm.own && state.convo === dm.peer + "|" + dm.cell) command("/api/read", { peer: dm.peer });
+    if (!dm.own && state.convo === dm.peer + "|" + dm.cell) command("api/read", { peer: dm.peer });
     renderDms();
   });
   on("dm_status", s => {

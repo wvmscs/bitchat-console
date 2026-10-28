@@ -5,6 +5,7 @@
 mod api;
 mod assets;
 mod guard;
+mod map;
 mod tls;
 
 use std::net::SocketAddr;
@@ -31,6 +32,10 @@ pub struct ServerConfig {
     pub allow_remote: bool,
     pub tls: Option<TlsFiles>,
     pub max_body: usize,
+    /// A running bitchat-geohash map (`http://127.0.0.1:8080`): served at
+    /// `/`, with the console floating over it; the console is always at
+    /// `/console/` too (lot 9, D26).
+    pub map: Option<String>,
 }
 
 impl Default for ServerConfig {
@@ -40,6 +45,7 @@ impl Default for ServerConfig {
             allow_remote: false,
             tls: None,
             max_body: 64 * 1024,
+            map: None,
         }
     }
 }
@@ -87,6 +93,29 @@ fn serve_asset(path: &str) -> Response {
     }
 }
 
+/// The page, its files and the API under `prefix` (`""` or `/console`).
+fn console_routes(prefix: &str) -> Router<api::AppState> {
+    let p = |path: &str| format!("{prefix}{path}");
+    Router::new()
+        .route(&p("/"), get(|| async { serve_asset("index.html") }))
+        .route(
+            &p("/assets/{*path}"),
+            get(|Path(p): Path<String>| async move { serve_asset(&p) }),
+        )
+        .route(&p("/api/state"), get(api::state))
+        .route(&p("/api/events"), get(api::events))
+        .route(&p("/api/area"), post(api::area))
+        .route(&p("/api/send"), post(api::send))
+        .route(&p("/api/dm"), post(api::dm))
+        .route(&p("/api/read"), post(api::read))
+        .route(&p("/api/mute"), post(api::mute))
+        .route(&p("/api/preset"), post(api::add_preset))
+        .route(&p("/api/preset/delete"), post(api::delete_preset))
+        .route(&p("/api/preset/send"), post(api::send_preset))
+        .route(&p("/api/schedule"), post(api::add_schedule))
+        .route(&p("/api/schedule/delete"), post(api::delete_schedule))
+}
+
 /// Serves the page around a running console.
 pub async fn serve(console: Arc<Console>, config: ServerConfig) -> Result<Server> {
     if !config.listen.ip().is_loopback() {
@@ -112,24 +141,18 @@ pub async fn serve(console: Arc<Console>, config: ServerConfig) -> Result<Server
         addr,
         tls.as_ref().map(|t| t.leaf.clone()),
     ));
-    let app = Router::new()
-        .route("/", get(|| async { serve_asset("index.html") }))
-        .route(
-            "/assets/{*path}",
-            get(|Path(p): Path<String>| async move { serve_asset(&p) }),
-        )
-        .route("/api/state", get(api::state))
-        .route("/api/events", get(api::events))
-        .route("/api/area", post(api::area))
-        .route("/api/send", post(api::send))
-        .route("/api/dm", post(api::dm))
-        .route("/api/read", post(api::read))
-        .route("/api/mute", post(api::mute))
-        .route("/api/preset", post(api::add_preset))
-        .route("/api/preset/delete", post(api::delete_preset))
-        .route("/api/preset/send", post(api::send_preset))
-        .route("/api/schedule", post(api::add_schedule))
-        .route("/api/schedule/delete", post(api::delete_schedule))
+    let mut app = console_routes("/console").route(
+        "/console",
+        get(|| async { axum::response::Redirect::permanent("/console/") }),
+    );
+    app = match &config.map {
+        // The map at `/`: anything that is not the console's goes to it.
+        Some(upstream) => app
+            .fallback(map::proxy)
+            .layer(axum::Extension(Arc::new(map::Upstream::new(upstream)?))),
+        None => app.merge(console_routes("")),
+    };
+    let app = app
         .with_state(state)
         .layer(DefaultBodyLimit::max(config.max_body))
         .layer(axum::middleware::from_fn_with_state(guard, guard::guard));

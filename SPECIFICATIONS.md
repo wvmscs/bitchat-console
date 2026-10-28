@@ -137,7 +137,7 @@ ci-dessus (§1), qui couvre aussi Android.
 | D7 | DM | Enveloppe BitChat `v2:` (1059/13/14) vers la clé geohash du correspondant, sur les relais par défaut, via Tor ; compatibilité vérifiée avec l'app de l'utilisateur |
 | D8 | Preuve de travail | 8 bits comme iOS (12 en option pour les utilisateurs Android qui l'exigent) |
 | D9 | Images | Liens seulement à la première version ; dépôt d'images (Blossom ou autre, via Tor) plus tard |
-| D10 | Superposition à la carte ✅ | Le binaire console embarque le moniteur et la carte de bitchat-geohash (dépendance git sur `v0.1.0`) et affiche la console en panneau flottant au-dessus ; un clic sur la carte choisit le geohash |
+| D10 | Superposition à la carte ✅ (réalisée autrement : D26 de `PLAN_ET1.md`, relais d'une carte lancée à côté) | Le binaire console embarque le moniteur et la carte de bitchat-geohash (dépendance git sur `v0.1.0`) et affiche la console en panneau flottant au-dessus ; un clic sur la carte choisit le geohash |
 | D11 | Conservation | Messages reçus en mémoire seulement ; historique local en option |
 | D12 | Dépôt ✅ | `wvmscs/bitchat-console`, privé, GPL-3.0-only, autonome (`[workspace]` propre : le `Cargo.toml` du workspace `Nostr/` reste intact) |
 | D13 | Notes de lieu (kind 1) | Hors périmètre de la première version |
