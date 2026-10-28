@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # geohash-relays and bitchat-geohash are private GitHub repositories: fetch
 # them with the git command line, which uses the user's SSH setup.
 [net]

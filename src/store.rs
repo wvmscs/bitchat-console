@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Where received and sent messages live (D16): in memory, per cell, bounded
 //! in number and age, lost when the console stops. Behind [`MessageStore`]
 //! so that another store (an optional local history, Redis if several

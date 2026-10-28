@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! NIP-13 proof of work for channel messages, as iOS mines it
 //! (`bitchat/Nostr/NostrPoW.swift`): a `["nonce", <16 hex>, <target>]` tag
 //! appended last, from a random start; after 2 s the committed target is

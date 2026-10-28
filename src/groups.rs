@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Private groups in the format of BitChat 1.8 (`GroupProtocol.swift`):
 //! creator-signed group state (invites `0x06`, key updates `0x07`) and
 //! ChaCha20-Poly1305 group messages (packet `0x25`), byte for byte.

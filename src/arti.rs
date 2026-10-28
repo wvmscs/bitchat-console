@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Tor in the binary, with Arti (lot 11, feature `arti`), as the iOS app
 //! does (`localPackages/Arti`, `arti-client`). No daemon to install.
 //!

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! BitChat binary packets, as the app carries them inside Nostr private
 //! messages (`bitchat1:` + base64url): `BinaryProtocol.swift` and
 //! `NostrEmbeddedBitChat.swift` of BitFoundation / the iOS app.

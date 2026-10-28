@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Private messages between two consoles: the app's envelope and packets,
 //! automatic delivery receipt, read receipt.
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Keys of the console (lot 3).
 //!
 //! * One Nostr key per geohash cell, derived from a device seed exactly as

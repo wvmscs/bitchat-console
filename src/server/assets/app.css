@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 :root { --bg: #fff; --fg: #1d1d1f; --muted: #6e6e73; --line: #d2d2d7; --accent: #0a66c2;
         --own: #eef5ff; --warn: #b85c00; --ok: #1a8f3c; }
 @media (prefers-color-scheme: dark) {

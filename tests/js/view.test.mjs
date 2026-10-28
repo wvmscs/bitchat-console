@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Pure helpers of the console page. Run: node --test tests/js/
 import { test } from "node:test";
 import assert from "node:assert/strict";

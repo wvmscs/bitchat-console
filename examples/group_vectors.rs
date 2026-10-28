@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Prints a group state and a group message made by the console, hex, one
 //! per line, for `tests/vectors/groups.swift` to check with the app's code.
 

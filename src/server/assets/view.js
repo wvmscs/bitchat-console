@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Pure helpers of the console page (no DOM), checked with node:
 //   node --test tests/js/
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Test helpers: a local NIP-01 relay and signing keys (from
 //! bitchat-geohash), a SOCKS5 proxy that records what it is asked, an echo
 //! server.

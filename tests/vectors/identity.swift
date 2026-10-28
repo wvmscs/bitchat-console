@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Test vectors for tests/identity.rs, computed with CryptoKit as the BitChat
 // app does (NostrIdentityBridge.deriveIdentity(forGeohash:),
 // NoiseEncryptionService). Run: swift tests/vectors/identity.swift

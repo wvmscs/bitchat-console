@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Keys: same derivation as the app (vectors from CryptoKit, see
 //! `tests/vectors/identity.swift`), files only the user can read.
 

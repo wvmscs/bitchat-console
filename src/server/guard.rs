@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Request checks and security headers, from bitchat-geohash (D13, D17
 //! there): `Host` (DNS rebinding), `Origin` and `Content-Type` of commands,
 //! CSP. With TLS, the names accepted are those of the certificate.

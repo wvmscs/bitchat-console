@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Relays that require NIP-42 authentication (D28): the console answers
 //! with the connection's key, subscribes again and sends again what was
 //! refused, once.

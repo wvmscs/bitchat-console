@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! `bitchat-console`: follow a BitChat location channel and its 8
 //! neighbours through Tor, write, and talk in private, in the browser.
 //!

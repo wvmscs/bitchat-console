@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The history page (lot 16): search, sort, select and delete what the
 // console kept (D31), live. Contents only ever go through `textContent`.
 import { author, clock } from "./view.js";

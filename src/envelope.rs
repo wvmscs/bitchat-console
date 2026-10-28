@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The BitChat private envelope (geohash DMs), exactly as the app writes
 //! and checks it (`NostrProtocol.swift`): a kind 14 rumor (unsigned, no
 //! tag) sealed in a kind 13 event signed by the sender, wrapped in a kind

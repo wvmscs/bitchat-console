@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The console: the followed area (a cell and its 8 neighbours), one
 //! connection per (relay, cell) through the connector, the feed.
 //!

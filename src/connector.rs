@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! How the console reaches a relay: through Tor, never in clear (D1).
 //!
 //! A [`Connector`] opens a byte stream to `host:port` for an *isolation key*.

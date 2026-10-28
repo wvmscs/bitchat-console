@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! A SOCKS5 proxy for tests (RFC 1928 + 1929): records the user name, host
 //! and port of each `CONNECT`, then connects to the host itself (tests only
 //! use local targets) and copies bytes both ways.

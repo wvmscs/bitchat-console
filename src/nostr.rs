@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The NIP-01 subset the console needs: events (id, BIP-340 signature and
 //! its check), REQ filters, the current time. From bitchat-geohash
 //! (`src/nostr.rs`), with signing added: the console publishes.

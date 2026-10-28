@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
 -- bitchat-console message history (lot 14, D31). Read and changed by other
 -- processes too: the daily cron (backup, rotation, purge, D33), a local AI.
 CREATE TABLE meta (

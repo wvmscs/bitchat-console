@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The console over the map of bitchat-geohash (lot 9): a floating panel
 // with the console page in a frame, and "Follow in console" in the menu of
 // a cell of the map. Loaded by the console's relay of the map page. The

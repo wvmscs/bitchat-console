@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! BitChat console for location channels (geohash).
 //!
 //! Reads and writes a geohash cell and its 8 neighbours, through Tor, with

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Mixed groups between consoles, over Nostr (lot 10): the app's rules
 //! (creator pinned, epoch up on every roster change, removal by roster),
 //! with consent before joining.

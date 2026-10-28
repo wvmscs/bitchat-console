@@ -49,9 +49,9 @@ other decisions are in [PLAN_ET1.md](PLAN_ET1.md).
 ## Constraints
 
 ### Do NOT
-- Modify files outside `bitchat-console/` and `geohash-relays/` (lot 1). `bitchat-geohash`,
-  `bitchat-envelope`, `nip90-dvm`, the workspace `Nostr/Cargo.toml` and `src/` are read-only;
-  ask first if a change there looks necessary.
+- Modify `bitchat-envelope`, `nip90-dvm`, the workspace `Nostr/Cargo.toml` or `src/`
+  (read-only); ask first if a change there looks necessary. `geohash-relays`,
+  `bitchat-geohash`, `bitchat-launcher` and `bitchat-web` follow their own `AGENTS.md`.
 - Connect to a relay without Tor (D1). A direct connection is allowed only to a loopback
   address, and only in tests.
 - Publish anything on public relays or real channels from tests or by agents. Closed-loop
@@ -83,7 +83,14 @@ other decisions are in [PLAN_ET1.md](PLAN_ET1.md).
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
+reuse lint      # every file has its copyright and licence (also a GitHub Action)
 ```
+
+<!-- REUSE-IgnoreStart -->
+A new file starts with
+`SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)` and
+`SPDX-License-Identifier: GPL-3.0-or-later` in a comment, or is covered by `REUSE.toml`.
+<!-- REUSE-IgnoreEnd -->
 
 ## Style
 

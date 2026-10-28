@@ -1,3 +1,6 @@
+-- SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+-- SPDX-License-Identifier: GPL-3.0-or-later
+
 -- bitchat-console local storage (lot 8, D16). Only what the user decides:
 -- muted keys (no nickname, no content), saved messages, schedules.
 CREATE TABLE mute (

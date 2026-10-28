@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The map of bitchat-geohash relayed under the console, against a stand-in
 //! that checks Host and Origin as bitchat-geohash does.
 

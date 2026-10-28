@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The message history (lot 14, D31): every message kept in
 //! `history.sqlite`, private to the user, back when deleted, back in the
 //! feed when a cell is followed again.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Groups in the console (lot 10, D6, D27): the app's group rules, carried
 //! over Nostr between per-group addresses.
 //!

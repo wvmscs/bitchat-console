@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Checks a group state and a group message made by the console with the
 // app's own GroupProtocol.swift. Run from the crate:
 //

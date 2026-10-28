@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The message history (lots 14 to 17, D31): every channel, private and
 //! group message, received and sent, muted keys included, in
 //! `history.sqlite`, a file apart from `console.sqlite` (no group keys beside

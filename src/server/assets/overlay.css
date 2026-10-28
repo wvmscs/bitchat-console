@@ -1,3 +1,8 @@
+/*
+ * SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
 /* The console floating over the map (lot 9). */
 #bc-console { position: fixed; z-index: 1500; left: 10px; bottom: 24px; width: min(520px, calc(100% - 20px));
   height: min(70vh, 640px); display: flex; flex-direction: column; resize: both; overflow: hidden;

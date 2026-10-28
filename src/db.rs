@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Local storage (lot 8, D16): SQLite in the data directory, for what the
 //! user decides only: muted keys, saved messages, schedules, groups, the IDs
 //! of the private messages read (D29) or deleted, the user's own nickname and the cells

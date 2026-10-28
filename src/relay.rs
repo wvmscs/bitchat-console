@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! One connection to one relay for one cell (D20), through the connector
 //! (Tor): subscription, events, publications, reconnection.
 //!

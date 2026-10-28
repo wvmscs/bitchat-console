@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Stand-ins for the BitFoundation helpers GroupProtocol.swift uses.
 import CryptoKit
 import Foundation

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Test vectors for the BitChat private envelope encryption (tests/dm.rs),
 // with the app's own XChaCha20-Poly1305 code. Run from the crate:
 //

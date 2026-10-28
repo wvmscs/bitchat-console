@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The apps' relay lists: downloaded through the connector (Tor, D21), the
 //! last valid copy kept in the data directory as a fallback, or read from a
 //! local file.

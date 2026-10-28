@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The console page (lot 7): the 9 cells, the feed, the composer, private
 // messages. Live from the server's SSE stream. Strings from relays (texts,
 // nicknames, relay messages) only ever go through `textContent`.

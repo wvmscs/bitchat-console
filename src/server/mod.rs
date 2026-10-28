@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The page of the console (lot 7): served locally, live updates by SSE,
 //! commands by `POST`, protected like bitchat-geohash's map (Host, Origin,
 //! CSP), HTTPS optional.

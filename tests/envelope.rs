@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The BitChat private envelope: vectors from the app's own XChaCha code
 //! (`tests/vectors/envelope.swift`), round trips, and the app's refusals.
 

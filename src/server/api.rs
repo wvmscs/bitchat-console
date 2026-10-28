@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! `/api/*`: the state, the live stream and the commands.
 //!
 //! The page shows message contents and nicknames (that is its purpose);

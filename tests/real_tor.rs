@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! Real network, through Tor, on the user's relay only
 //! (`wss://relay.famillevital.club`, authorised for tests) with throwaway
 //! seeds. Not run by default:

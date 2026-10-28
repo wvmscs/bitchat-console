@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! `bitchat-history`: the console's message history (`history.sqlite`, D31)
 //! from the command line, while the console runs or not (lot 17): query,
 //! edit, delete, back up, rotate (D33), wipe. For the daily cron and for

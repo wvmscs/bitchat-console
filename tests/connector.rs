@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 //! The Tor connector against a local SOCKS5 proxy: isolation by user name,
 //! names resolved by the proxy, failures, and no clear connection.
 
