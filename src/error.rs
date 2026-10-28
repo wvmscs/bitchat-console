@@ -8,6 +8,9 @@ pub enum Error {
     /// No Tor: the console never connects to a relay in clear (D1).
     #[error("Tor is not reachable at {0}: start tor, or give its SOCKS address with --tor-socks")]
     TorUnavailable(String),
+    /// Arti could not start or bootstrap.
+    #[error("Tor (Arti): {0}")]
+    Tor(String),
     #[error("invalid geohash {0:?}")]
     InvalidGeohash(String),
     /// BitChat channels have 2, 4, 5, 6 or 7 characters.

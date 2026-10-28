@@ -103,29 +103,28 @@ pub async fn fetch(url: &str, connector: &dyn Connector) -> Result<String> {
         None => (authority, if tls { 443 } else { 80 }),
     };
     let request = format!(
-        "GET {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: bitchat-console\r\nAccept: text/csv, text/plain\r\n\r\n"
+        "GET {path} HTTP/1.0\r\nHost: {host}\r\nUser-Agent: bitchat-console\r\nAccept: text/csv, text/plain\r\nConnection: close\r\n\r\n"
     );
     let stream = connector.connect(host, port, "relay-lists").await?;
-    let mut body = Vec::new();
-    if tls {
+    // Some servers keep the connection open whatever the request says: stop
+    // at Content-Length when there is one, else at the end of the stream.
+    let body = if tls {
         let name = rustls::pki_types::ServerName::try_from(host.to_owned())
             .map_err(|_| bad("host name"))?;
         let mut s = tokio_rustls::TlsConnector::from(crate::relay::tls_config())
             .connect(name, stream)
             .await?;
         s.write_all(request.as_bytes()).await?;
-        (&mut s)
-            .take(MAX_LIST_BYTES as u64 + 64 * 1024)
-            .read_to_end(&mut body)
-            .await?;
+        // TLS buffers writes: without a flush the request never leaves.
+        s.flush().await?;
+        read_response(&mut s).await?
     } else {
         let mut s = stream;
         s.write_all(request.as_bytes()).await?;
-        (&mut s)
-            .take(MAX_LIST_BYTES as u64 + 64 * 1024)
-            .read_to_end(&mut body)
-            .await?;
-    }
+        // TLS buffers writes: without a flush the request never leaves.
+        s.flush().await?;
+        read_response(&mut s).await?
+    };
     let split = body
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
@@ -140,4 +139,32 @@ pub async fn fetch(url: &str, connector: &dyn Connector) -> Result<String> {
         return Err(bad("list too large"));
     }
     String::from_utf8(content.to_vec()).map_err(|_| bad("not UTF-8 text"))
+}
+
+/// Reads an HTTP response: the header, then `Content-Length` bytes or up to
+/// the end of the stream, at most [`MAX_LIST_BYTES`] of body.
+async fn read_response<S: tokio::io::AsyncRead + Unpin>(s: &mut S) -> std::io::Result<Vec<u8>> {
+    let limit = MAX_LIST_BYTES + 64 * 1024;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        if let Some(split) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            let head = String::from_utf8_lossy(&buf[..split]).to_ascii_lowercase();
+            let length = head
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length:"))
+                .and_then(|v| v.trim().parse::<usize>().ok());
+            if let Some(len) = length
+                && buf.len() >= split + 4 + len
+            {
+                buf.truncate(split + 4 + len);
+                return Ok(buf);
+            }
+        }
+        let n = s.read(&mut chunk).await?;
+        if n == 0 || buf.len() > limit {
+            return Ok(buf);
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
 }

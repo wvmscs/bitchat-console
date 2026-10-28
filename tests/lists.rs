@@ -136,3 +136,39 @@ async fn lists_come_through_tor() {
     assert_eq!(r[0].0, "bitchat-console/relay-lists");
     let _ = std::fs::remove_dir_all(&cache);
 }
+
+#[tokio::test]
+async fn a_server_that_keeps_the_connection_open() {
+    // Like the CDN of raw.githubusercontent.com: Content-Length, no close.
+    let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/relays.csv", l.local_addr().unwrap());
+    tokio::spawn(async move {
+        while let Ok((mut s, _)) = l.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 2048];
+                let _ = s.read(&mut buf).await;
+                let answer = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{LIST}",
+                    LIST.len()
+                );
+                let _ = s.write_all(answer.as_bytes()).await;
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            });
+        }
+    });
+    let cache = temp("keepalive");
+    let dir = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        load(
+            &ListSource::parse(&url),
+            Platform::Ios,
+            Arc::new(Loopback),
+            &cache,
+        ),
+    )
+    .await
+    .expect("hung on an open connection")
+    .unwrap();
+    assert_eq!(dir.len(), 2);
+    let _ = std::fs::remove_dir_all(&cache);
+}

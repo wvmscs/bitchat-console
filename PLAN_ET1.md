@@ -17,7 +17,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 8 | Masquage, isolation d'un intervenant, messages préenregistrés et planifiés | ⬜ |
 | 9 | Superposition à la carte de bitchat-geohash | ⬜ |
 | 10 | Groupes mixtes (transport Nostr, entre consoles) | ⬜ |
-| 11 | Feature `arti` | ⬜ |
+| 11 | Feature `arti` | ✅ |
 | 12 | Validation réelle | ⬜ |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
@@ -134,8 +134,8 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       clé de la cellule, preuve de travail ≥ 8 bits, `OK` pris en compte, voisin avec sa
       propre clé, refus hors zone et message vide, marque `teleport`, présences sur
       `u0`/`u09t`/`u09tv` puis de nouveau, plus rien une fois téléporté.
-- [ ] Boucle fermée sur `relay.famillevital.club` : par Tor uniquement, donc au lot 11 (Arti)
-      ou quand `tor` sera installé.
+- [x] Boucle fermée sur `relay.famillevital.club`, par Tor (Arti, lot 11) : deux consoles à
+      graines jetables, message de l'une vu par l'autre en 0,11 s.
 
 ### Lot 6 : messages privés ⬜
 
@@ -176,10 +176,22 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
 - [ ] Création, invitation, départ, exclusion et rotation de clé, destruction, entre deux
       consoles.
 
-### Lot 11 : feature `arti` ⬜
+### Lot 11 : feature `arti` ✅
 
-- [ ] Connecteur Arti (`arti-client`) en feature de compilation, isolation par geohash,
-      cache des annuaires dans le dossier de données.
+Fait avant le lot 6 (dépend du seul lot 2) pour permettre les essais réels par Tor sans rien
+installer.
+
+- [x] Connecteur `Arti` (`arti-client` 0.47, `rustls`, feature `arti` hors défaut) :
+      `Arti::bootstrap(dossier)` (état et cache de Tor dans `tor-state`, `tor-cache`), un
+      `IsolationToken` par clé d'isolation (cellule, D20), délai de 60 s.
+- [x] **Défauts trouvés par l'essai réel** dans le téléchargement des listes (lot 4) :
+      requête jamais partie (écriture TLS sans `flush`) ; lecture jusqu'à la fin du flux alors
+      que le CDN garde la connexion (lecture bornée à `Content-Length`, `Connection: close`).
+      Test du cas « connexion gardée » ajouté.
+- [x] Essai réel (`tests/real_tor.rs`, `--ignored`) : Tor démarré en 0,9 s (cache), liste iOS
+      officielle par Tor (326 relais) en 0,8 s, 18 connexions en 2,8 s, boucle fermée sur
+      `relay.famillevital.club` en 0,11 s. `tests/real_tor_diag.rs` : chaque étape d'un GET
+      HTTPS par Tor, chronométrée.
 
 ### Lot 12 : validation réelle ⬜
 
@@ -225,3 +237,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 3 | Module `identity` (graine, `CellKey`, `NoiseIdentity`, `Keys`), dépendances `k256`, `sha2`, `hmac`, `rand_core`, `x25519-dalek`, `ed25519-dalek` (D15). Vecteurs CryptoKit identiques. `geohash-relays` en dépendance git (SSH, `git-fetch-with-cli`), verrouillée sur `55f63cd`. 13 tests. |
 | 28/10/2026 | 4 | Lecture : `nostr.rs` (repris de bitchat-geohash, signature ajoutée), `relay.rs`, `console.rs` (tâche, zone, fil, participants), `store.rs` (D16), `lists.rs` (D21). Défaut trouvé par les tests et corrigé (événement marqué vu avant validation). 23 tests, stables sur 3 lancements. Essai réel par Tor reporté (pas de `tor` installé : lot 11, Arti). |
 | 28/10/2026 | 5 | Écriture : `pow.rs` (comme `NostrPoW.swift`), `Console::send`, `set_area(g, teleport)`, présences, `OK`. 28 tests, stables sur 3 lancements ; clippy propre. Boucle fermée réelle reportée (Tor). |
+| 28/10/2026 | 11 | Feature `arti` (avancée avant le lot 6). Premier essai bloqué : le GET des listes ne partait pas (pas de `flush` après l'écriture TLS) et attendait une fin de flux que le CDN ne donne pas ; diagnostic pas à pas par Tor, deux corrections, test ajouté. Essai réel complet par Tor sur le relais de l'utilisateur : boucle fermée en 0,11 s. 29 tests (+ 2 réels `--ignored`), clippy propre avec et sans `arti`. |
