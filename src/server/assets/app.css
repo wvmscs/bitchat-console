@@ -80,3 +80,6 @@ h3 { font-size: 13px; margin: 10px 0 4px; }
 .status.read { color: var(--accent); font-weight: 600; }
 .unread { color: var(--accent); font-weight: 600; }
 .unread[hidden] { display: none; }
+.cell.quiet { opacity: 0.45; }
+.cell.quiet:hover, .cell.quiet.on { opacity: 1; }
+label.check.small { display: block; margin: 6px 0; }

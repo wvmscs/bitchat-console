@@ -191,3 +191,10 @@ export function freeRoom(width, height, panel, mapPanel = null, margin = 20) {
 export function mapArea(center) {
   return center.length > 2 ? center.slice(0, -1) : center;
 }
+
+// Cells whose messages the feed shows: the one chosen, else the 9, or only
+// the centre when the neighbours are muted.
+export function feedCells(cells, center, selected, muteNeighbours) {
+  if (selected) return [selected];
+  return muteNeighbours ? cells.filter(c => c === center) : cells;
+}

@@ -137,3 +137,11 @@ test("the map's area for the console's cell", () => {
   assert.equal(v.mapArea("u09tvw"), "u09tv");
   assert.equal(v.mapArea("u0"), "u0");
 });
+
+test("neighbours muted", () => {
+  const cells = ["u09tv", "u09wj", "u09ty"];
+  assert.deepEqual(v.feedCells(cells, "u09tv", null, false), cells);
+  assert.deepEqual(v.feedCells(cells, "u09tv", null, true), ["u09tv"]);
+  // A neighbour chosen is shown, muted or not.
+  assert.deepEqual(v.feedCells(cells, "u09tv", "u09wj", true), ["u09wj"]);
+});

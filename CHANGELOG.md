@@ -13,6 +13,7 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- Page: "mute the 8 neighbours" under the grid: the feed shows the centre's messages only, the neighbours are dimmed, the map outlines the centre; the neighbours are still followed (counts, private messages) and a click on one still shows its messages. Kept in the browser.
 - Over the map: a double-click (or ctrl-click, or cmd-click) on one of the console's 9 cells makes the map watch the area of that cell (its parent), without moving the console; a single click still outlines and frames. The map follows the console's centre when it moves, not its selection.
 - Over the map: when the console's cell changes, the map watches the area around it (its parent, `u09tv` → `u09t`) with all its functions, through `POST /api/area` of bitchat-geohash 0.2.0 (D30); then the console's cells are framed again. The panel's title says when the map moves, or why it could not (an older map answers 404).
 - Over the map: choosing a cell in the console (or "all 9 cells") outlines it on the map of bitchat-geohash and fits the map to it, in the room left between the console's panel and the map's own (unless folded). The console tells the map by `postMessage`; `hook.js`, injected as a classic script before the map's module, keeps the Leaflet map (bitchat-geohash unchanged). The first view only outlines, the map keeps its own.

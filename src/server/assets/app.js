@@ -3,7 +3,7 @@
 // nicknames, relay messages) only ever go through `textContent`.
 
 import {
-  author, clock, conversations, feed, gridOrder, groupTexts, isImage, linkify, nicknames, people, personNote,
+  author, clock, conversations, feed, feedCells, gridOrder, groupTexts, isImage, linkify, nicknames, people, personNote,
   relayCount, repeatLabel, statusMark, unixFromLocal, unreadTotal, visible,
 } from "./view.js";
 
@@ -30,7 +30,9 @@ const state = {
   group: null,          // open group id
   writeCell: null,      // cell chosen in the composer, until another is shown
   people: { cell: null, list: [] },  // participants of the current cell
+  muteNeighbours: false,  // the feed shows the centre only (kept in the browser)
 };
+state.muteNeighbours = (() => { try { return localStorage.getItem("muteNeighbours") === "1"; } catch { return false; } })();
 
 // The cell shown alone, else the centre.
 const currentCell = () => state.selected || (state.status && state.status.center);
@@ -287,14 +289,16 @@ function drawCells(box) {
     box.append(el("p", "muted", "Choose a geohash to follow it and its 8 neighbours."));
     return;
   }
-  const all = el("button", "cell all" + (state.selected === null ? " on" : ""), "all 9 cells");
+  const all = el("button", "cell all" + (state.selected === null ? " on" : ""),
+    state.muteNeighbours ? `#${s.center} only (neighbours muted)` : "all 9 cells");
   all.addEventListener("click", () => {
     state.selected = null; state.writeCell = null; render(); refreshPeople(0);
   });
   const grid = el("div", "grid");
   for (const c of gridOrder(s.cells)) {
     const b = el("button", "cell" + (state.selected === c.geohash ? " on" : "")
-      + (c.geohash === s.center ? " center" : ""));
+      + (c.geohash === s.center ? " center" : "")
+      + (state.muteNeighbours && c.geohash !== s.center ? " quiet" : ""));
     const n = (state.messages[c.geohash] || []).length;
     const me = s.keys && s.keys[c.geohash];
     b.title = "people: keys seen in the last 15 minutes (messages and presences)\n"
@@ -321,7 +325,22 @@ function drawCells(box) {
     });
     grid.append(b);
   }
-  box.append(all, grid, drawPeople(s));
+  // Muting the 8 neighbours: their messages leave the feed (still
+  // followed: counts, private messages, a click shows one).
+  const mute = el("input");
+  mute.type = "checkbox";
+  mute.checked = state.muteNeighbours;
+  mute.addEventListener("change", () => {
+    state.muteNeighbours = mute.checked;
+    save("muteNeighbours", mute.checked ? "1" : "0");
+    postView();
+    renderCells();
+    renderFeed();
+  });
+  const muteLabel = el("label", "check small");
+  muteLabel.append(mute, document.createTextNode(" mute the 8 neighbours"));
+  muteLabel.title = "show only the centre's messages; a click on a neighbour still shows its own";
+  box.append(all, grid, muteLabel, drawPeople(s));
   if (state.local.mutes.length) {
     const m = el("div", "muted-list");
     m.append(el("h3", null, "Muted"));
@@ -409,7 +428,7 @@ function drawFeed(box) {
   box.replaceChildren();
   const s = state.status;
   if (!s || !s.cells.length) return;
-  const cells = state.selected ? [state.selected] : s.cells.map(c => c.geohash);
+  const cells = feedCells(s.cells.map(c => c.geohash), s.center, state.selected, state.muteNeighbours);
   const list = el("div", "messages");
   if (state.isolate) {
     const bar = el("div", "isolate");
@@ -440,7 +459,9 @@ function drawFeed(box) {
     list.append(row);
   }
   const n = list.querySelectorAll(".msg").length;
-  box.append(fold("feed", `Messages · ${n}${state.selected ? " in #" + state.selected : " in the 9 cells"}`,
+  const where = state.selected ? " in #" + state.selected
+    : state.muteNeighbours ? ` in #${s.center} (neighbours muted)` : " in the 9 cells";
+  box.append(fold("feed", `Messages · ${n}${where}`,
     [list], { stick: true, hold: true }), composer());
 }
 
@@ -738,7 +759,11 @@ let lastView = null;
 function postView() {
   const s = state.status;
   if (window.parent === window || !s || !s.center) return;
-  const view = { center: s.center, cells: s.cells.map(c => c.geohash), selected: state.selected };
+  const view = {
+    center: s.center,
+    cells: s.cells.map(c => c.geohash),
+    selected: state.selected ?? (state.muteNeighbours ? s.center : null),
+  };
   const key = JSON.stringify(view);
   if (key === lastView) return;
   const fit = lastView !== null;
