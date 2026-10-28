@@ -28,6 +28,7 @@ const state = {
   isolate: null,        // key shown alone in the feed (isolation window)
   groups: { groups: [], messages: [], invitations: [] },
   group: null,          // open group id
+  writeCell: null,      // cell chosen in the composer, until another is shown
 };
 
 const saved = key => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
@@ -49,6 +50,72 @@ async function command(path, body) {
     return { ok: false, data: { message: "server unreachable" } };
   }
 }
+
+// --- Re-rendering without getting in the way --------------------------------
+//
+// Sections are rebuilt on every live event. Fields marked `data-keep` keep
+// their value, the focus and the caret; a section is not rebuilt while a
+// button is held (the click would be lost) or text is selected in it.
+
+const later = new Map();  // section id -> draw, postponed
+let pressed = false;
+
+function selecting(box) {
+  const s = document.getSelection();
+  return !!s && !s.isCollapsed && s.rangeCount > 0
+    && box.contains(s.getRangeAt(0).commonAncestorContainer);
+}
+
+function keep(id, draw) {
+  const box = document.getElementById(id);
+  if (pressed || selecting(box)) { later.set(id, draw); return; }
+  later.delete(id);
+  const values = new Map();
+  // Inputs keep their value, messages beside them their text.
+  const valueOf = f => ("value" in f ? f.value : f.textContent);
+  for (const f of box.querySelectorAll("[data-keep]")) values.set(f.dataset.keep, valueOf(f));
+  const a = document.activeElement;
+  const focus = a && box.contains(a) && a.dataset.keep
+    ? { key: a.dataset.keep, start: a.selectionStart, end: a.selectionEnd } : null;
+  const top = box.scrollTop;
+  draw(box);
+  for (const f of box.querySelectorAll("[data-keep]")) {
+    if (!values.has(f.dataset.keep)) continue;
+    const v = values.get(f.dataset.keep);
+    if (f.tagName === "SELECT" && ![...f.options].some(o => o.value === v)) continue;
+    if ("value" in f) f.value = v; else f.textContent = v;
+  }
+  if (focus) {
+    const f = box.querySelector(`[data-keep="${CSS.escape(focus.key)}"]`);
+    if (f) {
+      f.focus({ preventScroll: true });
+      try { if (focus.start !== null) f.setSelectionRange(focus.start, focus.end); } catch { /* not text */ }
+    }
+  }
+  if (id !== "feed") box.scrollTop = top;
+}
+
+function flush() {
+  for (const [id, draw] of [...later]) keep(id, draw);
+}
+
+document.addEventListener("pointerdown", () => { pressed = true; }, true);
+for (const name of ["pointerup", "pointercancel"]) {
+  // After the click that follows.
+  document.addEventListener(name, () => { pressed = false; setTimeout(flush, 0); }, true);
+}
+document.addEventListener("selectionchange", () => { if (later.size) flush(); });
+
+/// A field marked `key`, kept across re-rendering.
+function field(tag, key, cls) {
+  const f = el(tag, cls);
+  f.dataset.keep = key;
+  return f;
+}
+
+/// The field as it is now on the page: the one a handler closed over may
+/// have been replaced since.
+const live = f => document.querySelector(`[data-keep="${CSS.escape(f.dataset.keep)}"]`) || f;
 
 // --- Top bar ------------------------------------------------------------------
 
@@ -98,8 +165,9 @@ function updateTop() {
 
 // --- Cells ----------------------------------------------------------------------
 
-function renderCells() {
-  const box = document.getElementById("cells");
+function renderCells() { keep("cells", drawCells); }
+
+function drawCells(box) {
   box.replaceChildren();
   const s = state.status;
   if (!s || !s.cells.length) {
@@ -107,7 +175,7 @@ function renderCells() {
     return;
   }
   const all = el("button", "cell all" + (state.selected === null ? " on" : ""), "all 9 cells");
-  all.addEventListener("click", () => { state.selected = null; render(); });
+  all.addEventListener("click", () => { state.selected = null; state.writeCell = null; render(); });
   const grid = el("div", "grid");
   for (const c of gridOrder(s.cells)) {
     const b = el("button", "cell" + (state.selected === c.geohash ? " on" : "")
@@ -115,7 +183,7 @@ function renderCells() {
     const n = (state.messages[c.geohash] || []).length;
     b.append(el("b", null, "#" + c.geohash), el("span", "muted", ` ${c.participants} people`),
       el("span", "muted small", ` ${n} msgs · relays ${relayCount(c)}`));
-    b.addEventListener("click", () => { state.selected = c.geohash; render(); });
+    b.addEventListener("click", () => { state.selected = c.geohash; state.writeCell = null; render(); });
     grid.append(b);
   }
   box.append(all, grid);
@@ -160,8 +228,9 @@ function textNodes(parent, text) {
   }
 }
 
-function renderFeed() {
-  const box = document.getElementById("feed");
+function renderFeed() { keep("feed", drawFeed); }
+
+function drawFeed(box) {
   const keepBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   box.replaceChildren();
   const s = state.status;
@@ -210,21 +279,26 @@ function composer() {
     o.value = c.geohash;
     cell.append(o);
   }
-  cell.value = state.selected || s.center;
-  const nick = el("input");
+  const cells = s.cells.map(c => c.geohash);
+  cell.value = cells.includes(state.writeCell) ? state.writeCell : state.selected || s.center;
+  cell.addEventListener("change", () => { state.writeCell = cell.value; });
+  const nick = field("input", "nickname");
   nick.placeholder = "nickname";
   nick.value = saved("nickname");
   nick.addEventListener("change", () => save("nickname", nick.value.trim()));
-  const text = el("input", "text");
+  const text = field("input", "feed-text", "text");
   text.placeholder = "message";
   const send = el("button", null, "Send");
-  const result = el("span", "warn small");
+  const result = field("span", "feed-result", "warn small");
   const go = async () => {
-    if (!text.value.trim()) return;
+    const value = live(text).value;
+    if (!value.trim()) return;
     send.disabled = true;
-    const { ok, data } = await command("api/send", { text: text.value, cell: cell.value, nickname: nick.value.trim() || null });
+    const { ok, data } = await command("api/send", {
+      text: value, cell: cell.value, nickname: live(nick).value.trim() || null,
+    });
     send.disabled = false;
-    if (ok) text.value = ""; else result.textContent = (data && data.message) || "refused";
+    if (ok) live(text).value = ""; else live(result).textContent = (data && data.message) || "refused";
   };
   send.addEventListener("click", go);
   text.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
@@ -240,8 +314,9 @@ function openConvo(peer, cell) {
   render();
 }
 
-function renderDms() {
-  const box = document.getElementById("dms");
+function renderDms() { keep("dms", drawDms); }
+
+function drawDms(box) {
   box.replaceChildren(el("h2", null, "Private messages"));
   const convos = conversations(state.dms);
   if (!convos.length && !state.convo) {
@@ -270,7 +345,7 @@ function renderDms() {
   // Inviting this person to one of my groups (I am the creator).
   const mine = state.groups.groups.filter(g => g.creator_is_me);
   if (mine.length) {
-    const pick = el("select");
+    const pick = field("select", "invite-group");
     pick.setAttribute("aria-label", "group to invite to");
     for (const g of mine) {
       const o = el("option", null, g.name);
@@ -286,14 +361,15 @@ function renderDms() {
     row.append(pick, inv);
     box.append(row);
   }
-  const text = el("input", "text");
+  const text = field("input", "dm-text|" + state.convo, "text");
   text.placeholder = "private message (255 bytes at most)";
   const send = el("button", null, "Send");
-  const result = el("span", "warn small");
+  const result = field("span", "dm-result|" + state.convo, "warn small");
   const go = async () => {
-    if (!text.value.trim()) return;
-    const { ok, data } = await command("api/dm", { peer, cell, text: text.value });
-    if (ok) text.value = ""; else result.textContent = (data && data.message) || "refused";
+    const value = live(text).value;
+    if (!value.trim()) return;
+    const { ok, data } = await command("api/dm", { peer, cell, text: value });
+    if (ok) live(text).value = ""; else live(result).textContent = (data && data.message) || "refused";
   };
   send.addEventListener("click", go);
   text.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
@@ -313,8 +389,9 @@ function groupOp(body) {
   });
 }
 
-function renderGroups() {
-  const box = document.getElementById("groups");
+function renderGroups() { keep("groups", drawGroups); }
+
+function drawGroups(box) {
   box.replaceChildren(el("h2", null, "Groups"));
   const v = state.groups;
   for (const inv of v.invitations) {
@@ -354,13 +431,14 @@ function renderGroups() {
       row.append(el("b", null, m.nickname || "?"), el("span", "muted small", " " + clock(m.created_at)), body);
       thread.append(row);
     }
-    const text = el("input", "text");
+    const text = field("input", "group-text|" + g.id, "text");
     text.placeholder = "message to the group";
     const send = el("button", null, "Send");
     const go = async () => {
-      if (!text.value.trim()) return;
-      const { ok } = await groupOp({ op: "send", group: g.id, text: text.value, nickname: saved("nickname") });
-      if (ok) text.value = "";
+      const value = live(text).value;
+      if (!value.trim()) return;
+      const { ok } = await groupOp({ op: "send", group: g.id, text: value, nickname: saved("nickname") });
+      if (ok) live(text).value = "";
     };
     send.addEventListener("click", go);
     text.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
@@ -375,13 +453,14 @@ function renderGroups() {
     });
     box.append(thread, form, end);
   }
-  const name = el("input");
+  const name = field("input", "group-name");
   name.placeholder = "new group name";
   const create = el("button", null, "Create");
   create.addEventListener("click", async () => {
-    if (!name.value.trim()) return;
-    const { ok } = await groupOp({ op: "create", name: name.value, nickname: saved("nickname") });
-    if (ok) name.value = "";
+    const value = live(name).value;
+    if (!value.trim()) return;
+    const { ok } = await groupOp({ op: "create", name: value, nickname: saved("nickname") });
+    if (ok) live(name).value = "";
   });
   const form = el("div", "composer");
   form.append(name, create);
@@ -391,8 +470,9 @@ function renderGroups() {
 
 // --- Saved and scheduled messages ------------------------------------------------
 
-function renderSaved() {
-  const box = document.getElementById("saved");
+function renderSaved() { keep("saved", drawSaved); }
+
+function drawSaved(box) {
   box.replaceChildren(el("h2", null, "Saved messages"));
   for (const p of state.local.presets) {
     const row = el("div", "row");
@@ -407,15 +487,16 @@ function renderSaved() {
     row.append(el("b", null, p.name || "(no name)"), el("span", "muted small", " " + p.text + " "), send, del);
     box.append(row);
   }
-  const name = el("input");
+  const name = field("input", "preset-name");
   name.placeholder = "name";
-  const text = el("input", "text");
+  const text = field("input", "preset-text", "text");
   text.placeholder = "text to keep";
   const add = el("button", null, "Save");
   add.addEventListener("click", async () => {
-    if (!text.value.trim()) return;
-    const { ok } = await command("api/preset", { name: name.value, text: text.value, nickname: saved("nickname") || null });
-    if (ok) { name.value = ""; text.value = ""; }
+    const [n, t] = [live(name), live(text)];
+    if (!t.value.trim()) return;
+    const { ok } = await command("api/preset", { name: n.value, text: t.value, nickname: saved("nickname") || null });
+    if (ok) { live(name).value = ""; live(text).value = ""; }
   });
   const form = el("div", "composer");
   form.append(name, text, add);
@@ -433,26 +514,29 @@ function renderSaved() {
         + (sc.last_result ? ` · last: ${sc.last_result}` : "") + " "), del);
     box.append(row);
   }
-  const stext = el("input", "text");
+  const stext = field("input", "schedule-text", "text");
   stext.placeholder = "message to send later";
-  const at = el("input");
+  const at = field("input", "schedule-at");
   at.type = "datetime-local";
-  const repeat = el("select");
+  const repeat = field("select", "schedule-repeat");
   for (const [v, l] of [["", "once"], ["3600", "every hour"], ["86400", "every day"]]) {
     const o = el("option", null, l);
     o.value = v;
     repeat.append(o);
   }
   const plan = el("button", null, "Schedule");
-  const result = el("span", "warn small");
+  const result = field("span", "schedule-result", "warn small");
   plan.addEventListener("click", async () => {
-    const when = unixFromLocal(at.value);
-    if (!stext.value.trim() || !when) { result.textContent = "text and time needed"; return; }
+    const [t, r] = [live(stext), live(result)];
+    const when = unixFromLocal(live(at).value);
+    if (!t.value.trim() || !when) { r.textContent = "text and time needed"; return; }
+    const rep = live(repeat).value;
     const { ok, data } = await command("api/schedule", {
-      text: stext.value, at: when, repeat_secs: repeat.value ? Number(repeat.value) : null,
+      text: t.value, at: when, repeat_secs: rep ? Number(rep) : null,
       cell: state.selected, nickname: saved("nickname") || null,
     });
-    if (ok) { stext.value = ""; result.textContent = ""; } else result.textContent = (data && data.message) || "refused";
+    if (ok) { live(stext).value = ""; live(result).textContent = ""; }
+    else live(result).textContent = (data && data.message) || "refused";
   });
   const sform = el("div", "composer");
   sform.append(stext, at, repeat, plan, result);

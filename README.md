@@ -49,7 +49,7 @@ never loaded. With `--map`, the map tiles are loaded by the browser directly, no
 
 ```sh
 cargo test                                   # offline: local relays, local SOCKS proxy
-node --test tests/js/                        # page helpers
+node --test tests/js/*.mjs                    # page helpers
 cargo test --release --features arti --test real_tor -- --ignored --nocapture   # real, through Tor
 BITCHAT_TOR_SOCKS=127.0.0.1:9050 cargo test --release --test real_tor -- --ignored --nocapture  # same, Tor daemon
 ```

@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### Fixed
+- Page: live events no longer take the focus away. Fields keep their value, focus and caret when a section is rebuilt; a section waits while a button is held (the click went to a replaced button) or text is selected in it; the cell chosen in the composer stays chosen. Found while testing with the app (lot 12).
+- README: `node --test tests/js/*.mjs` (Node 22 takes files, not a directory).
 - Stopping the page server no longer waits for the map's live streams relayed under `--map` (a browser left on the map held Ctrl-C for good): they end when the server stops. Found with bitchat-launcher.
 - Connections no longer wanted are closed 10–40 s later, so that what they still have to send goes out (a message just before an area change, the last envelopes of a group).
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
