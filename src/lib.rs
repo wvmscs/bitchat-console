@@ -5,7 +5,12 @@
 //! browser. See `SPECIFICATIONS.md` and `PLAN_ET1.md`.
 
 pub mod connector;
+pub mod console;
 mod error;
 pub mod identity;
+pub mod lists;
+pub mod nostr;
+pub mod relay;
+pub mod store;
 
 pub use error::{Error, Result};

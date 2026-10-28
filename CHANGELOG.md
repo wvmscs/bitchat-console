@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Reading the area (lot 4): `Console` follows a cell and its 8 neighbours with one connection per (relay, cell) through the connector; relay client (`relay`: WebSocket over Tor, TLS, reconnection, AUTH-required relays given up); checks (kind, cell, tag limits, id, signature) then deduplication; in-memory feed per cell (`MessageStore`, `MemoryStore`), participants; area changes on the fly; relay lists downloaded through Tor with a cached fallback (`lists`). NIP-01 module with signing (`nostr`).
 - Keys (lot 3): device seed and Noise identity in private files (`Keys::load_or_create`, `0600`, insecure files refused), one Nostr key per cell derived as the app does (`Seed::cell`, checked against CryptoKit vectors), Noise fingerprint and peer ID (`NoiseIdentity`). `geohash-relays` is a git dependency.
 - Tor connector (lot 2): `Connector` trait, `Socks5` client that isolates each cell on its own circuit (SOCKS user name, decision D20) and lets Tor resolve names, `Socks5::check` (no Tor, no console), `Loopback` for tests only (refuses any other host).
 - Common crate `geohash-relays` (decision D2, lot 1): relay lists, the apps' choice, neighbours, `Strategy`; in its own repository.

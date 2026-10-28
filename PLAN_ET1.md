@@ -10,7 +10,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 1 | Crate commune `geohash-relays` : listes, règles iOS et Android, voisins, interface de stratégie | ✅ |
 | 2 | Connecteur Tor (SOCKS5, isolation par geohash), refus du clair | ✅ |
 | 3 | Identités : graine, clé par geohash, identité Noise | ✅ |
-| 4 | Lecture : 9 cellules, connexions, abonnements, fil, changement de geohash à chaud | ⬜ |
+| 4 | Lecture : 9 cellules, connexions, abonnements, fil, changement de geohash à chaud | ✅ |
 | 5 | Écriture : messages, preuve de travail, présences, marque `teleport` | ⬜ |
 | 6 | Messages privés (enveloppe BitChat `v2:`, relais par défaut) | ⬜ |
 | 7 | Serveur web et page console | ⬜ |
@@ -87,15 +87,33 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       identifiant de pair = 16 premiers caractères (`PeerID(publicKey:)`), clé de signature
       Ed25519 ; mêmes résultats que CryptoKit.
 
-### Lot 4 : lecture ⬜
+### Lot 4 : lecture ✅
 
-- [ ] 9 cellules → relais (lot 1) → plan d'écoute (une connexion par relais via le connecteur,
-      abonnements groupés), filtre `kinds:[20000,20001]`, `#g`, `since: −1 h`, `limit: 200`.
-- [ ] Vérification des signatures, déduplication par id, `AUTH` et `CLOSED` lus et affichés.
-- [ ] Fil : cellule, pseudo (`n`), suffixe de clé, marque `teleport` ; participants par
-      cellule.
-- [ ] Changement de geohash à chaud : seuls les relais et abonnements qui changent bougent.
-- [ ] Tests avec un relais de test local.
+- [x] 9 cellules (`with_neighbours`) → relais de la stratégie (lot 1) → **une connexion par
+      couple (relais, cellule)** (D20) via le connecteur ; filtre `kinds:[20000,20001]`,
+      `#g:[cellule]`, `since: −1 h`, `limit: 200` (comme les apps). Client de relais
+      (`relay.rs`) : WebSocket sur le flux Tor, TLS (racines du web), reconnexion de 1 s à
+      5 min (×2), file des publications pendant les coupures, `CLOSED auth-required:` →
+      abandon (l'identité d'une cellule ne peut pas s'authentifier).
+- [x] Contrôles : kind, cellule du `g` = cellule de la connexion, limites des tags, puis
+      déduplication par id, puis id et signature ; un événement n'est marqué « vu » qu'une
+      fois valide (**défaut trouvé par les tests** : sinon un relais qui l'envoie d'abord sur
+      la mauvaise connexion le cache). `NOTICE` et `CLOSED` remontés comme texte à afficher.
+- [x] Fil (`MessageStore`, D16) : tampon mémoire par cellule (500 messages, 24 h), trié par
+      date, relais qui ont livré chaque message ; pseudo (`n`), marque `teleport` ; date
+      future ramenée à maintenant (comme iOS). Participants par cellule (clés vues en 15 min,
+      messages et présences).
+- [x] Changement de zone à chaud (`Console::set_area`) : seules les connexions qui changent
+      bougent ; un message d'une cellule quittée n'est plus montré ; niveau non canal
+      (`NotAChannel`) et geohash invalide refusés.
+- [x] Listes de relais (D21) : téléchargées par le connecteur (Tor, isolation
+      `relay-lists`), HTTP/1.0 + TLS ; dernière copie valide en cache dans le dossier de
+      données, utilisée si le téléchargement échoue ou si iOS refuserait la liste (hôte à deux
+      endroits) ; fichier local accepté ; sinon `Error::NoRelayList`.
+- [x] Tests (relais de test local, relais scripté, proxy SOCKS5 de test) : fil des 9
+      cellules, déduplication entre deux relais, présence comptée sans message, événements
+      invalides écartés (signature, autre cellule, autre kind), changement de zone,
+      9 circuits pour 9 cellules, listes (téléchargement, cache, repli, refus, Tor).
 
 ### Lot 5 : écriture ⬜
 
@@ -165,6 +183,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D18 | Licence de `geohash-relays` | Unlicense (domaine public), comme l'app iOS ; compatible avec la GPL-3.0 de l'app Android, donc proposable aux deux | ✅ |
 | D19 | Calcul des geohash dans `geohash-relays` | Module maison sans dépendance (décodage, encodage, voisins), aligné sur `Geohash.swift` d'iOS plutôt que sur la crate `geohash` (qui fait boucler la latitude aux pôles) : crate facile à transposer dans les apps — *prise par l'agent, à revoir* | ✅ |
 | D20 | Isolation Tor | Une connexion par couple (relais, cellule), chacune avec son identifiant SOCKS, donc son circuit Tor : un relais ne voit sur une connexion qu'une cellule et sa clé, et ne peut pas relier les clés de deux cellules par la connexion ni par l'adresse de sortie (l'app iOS partage une connexion par relais et n'isole pas ses flux). Coût : plus de connexions — *prise par l'agent, à revoir* | ✅ |
+| D21 | Listes de relais | Téléchargées par Tor comme les relais (rien ne sort en clair), dernière copie valide en cache et utilisée en repli ; règle iOS : liste avec un hôte à deux endroits refusée — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -189,3 +208,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 1 | `geohash-relays` : listes, sélection (portées de bitchat-geohash sans réseau), module `geohash` maison (D19), `Strategy`/`AppStrategy`, README. 24 tests (17 de sélection repris tels quels), clippy et rustdoc propres. Commité `55f63cd`. |
 | 28/10/2026 | 2 | Connecteur : trait `Connector`, `Socks5` (isolation par identifiant, D20), `Loopback` (tests seulement), `Error::TorUnavailable`. 7 tests (proxy SOCKS5 de test). `tor` n'est pas installé sur la machine : essai réel avec Tor reporté au lot 11 (Arti, sans rien installer) ou à l'utilisateur. |
 | 28/10/2026 | 3 | Module `identity` (graine, `CellKey`, `NoiseIdentity`, `Keys`), dépendances `k256`, `sha2`, `hmac`, `rand_core`, `x25519-dalek`, `ed25519-dalek` (D15). Vecteurs CryptoKit identiques. `geohash-relays` en dépendance git (SSH, `git-fetch-with-cli`), verrouillée sur `55f63cd`. 13 tests. |
+| 28/10/2026 | 4 | Lecture : `nostr.rs` (repris de bitchat-geohash, signature ajoutée), `relay.rs`, `console.rs` (tâche, zone, fil, participants), `store.rs` (D16), `lists.rs` (D21). Défaut trouvé par les tests et corrigé (événement marqué vu avant validation). 23 tests, stables sur 3 lancements. Essai réel par Tor reporté (pas de `tor` installé : lot 11, Arti). |

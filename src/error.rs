@@ -10,11 +10,20 @@ pub enum Error {
     TorUnavailable(String),
     #[error("invalid geohash {0:?}")]
     InvalidGeohash(String),
+    /// BitChat channels have 2, 4, 5, 6 or 7 characters.
+    #[error("{0:?} is not a channel: BitChat channels have 2, 4, 5, 6 or 7 characters")]
+    NotAChannel(String),
+    #[error("the console has stopped")]
+    ConsoleStopped,
     /// A key file other users can read: the console refuses to use it.
     #[error("{0} can be read by other users: run `chmod 600` on it")]
     InsecureKeyFile(String),
     #[error("{0} is not a key file of this console (wrong size)")]
     BadKeyFile(String),
+    #[error("no {platform} relay list: {reason}, and no cached copy")]
+    NoRelayList { platform: String, reason: String },
+    #[error("HTTP: {0}")]
+    Http(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
