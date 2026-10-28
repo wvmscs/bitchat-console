@@ -124,6 +124,12 @@ pub async fn serve(console: Arc<Console>, config: ServerConfig) -> Result<Server
         .route("/api/send", post(api::send))
         .route("/api/dm", post(api::dm))
         .route("/api/read", post(api::read))
+        .route("/api/mute", post(api::mute))
+        .route("/api/preset", post(api::add_preset))
+        .route("/api/preset/delete", post(api::delete_preset))
+        .route("/api/preset/send", post(api::send_preset))
+        .route("/api/schedule", post(api::add_schedule))
+        .route("/api/schedule/delete", post(api::delete_schedule))
         .with_state(state)
         .layer(DefaultBodyLimit::max(config.max_body))
         .layer(axum::middleware::from_fn_with_state(guard, guard::guard));

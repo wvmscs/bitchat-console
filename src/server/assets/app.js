@@ -2,8 +2,10 @@
 // messages. Live from the server's SSE stream. Strings from relays (texts,
 // nicknames, relay messages) only ever go through `textContent`.
 
-import { author, clock, conversations, feed, gridOrder, isImage, linkify, relayCount, statusMark }
-  from "./view.js";
+import {
+  author, clock, conversations, feed, gridOrder, isImage, linkify, relayCount, repeatLabel,
+  statusMark, unixFromLocal, visible,
+} from "./view.js";
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -22,6 +24,8 @@ const state = {
   convo: null,          // open conversation key "peer|cell"
   link: "connecting",
   texts: [],            // last relay texts (NOTICE, CLOSED, refusals)
+  local: { mutes: [], presets: [], schedules: [] },
+  isolate: null,        // key shown alone in the feed (isolation window)
 };
 
 const saved = key => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
@@ -111,6 +115,21 @@ function renderCells() {
     grid.append(b);
   }
   box.append(all, grid);
+  if (state.local.mutes.length) {
+    const m = el("div", "muted-list");
+    m.append(el("h3", null, "Muted"));
+    for (const key of state.local.mutes) {
+      const row = el("div", "row");
+      const show = el("button", null, "isolate");
+      show.title = "show only this person's messages";
+      show.addEventListener("click", () => { state.isolate = key; renderFeed(); });
+      const un = el("button", null, "unmute");
+      un.addEventListener("click", () => command("/api/mute", { pubkey: key, muted: false }));
+      row.append(el("span", null, "#" + key.slice(-4) + " "), show, un);
+      m.append(row);
+    }
+    box.append(m);
+  }
   if (state.texts.length) {
     const log = el("details", "texts");
     log.append(el("summary", "muted", `relay messages (${state.texts.length})`));
@@ -145,7 +164,14 @@ function renderFeed() {
   if (!s || !s.cells.length) return;
   const cells = state.selected ? [state.selected] : s.cells.map(c => c.geohash);
   const list = el("div", "messages");
-  for (const m of feed(state.messages, cells)) {
+  if (state.isolate) {
+    const bar = el("div", "isolate");
+    const back = el("button", null, "back to all");
+    back.addEventListener("click", () => { state.isolate = null; renderFeed(); });
+    bar.append(el("span", null, `Only #${state.isolate.slice(-4)} `), back);
+    list.append(bar);
+  }
+  for (const m of visible(feed(state.messages, cells), state.local.mutes, state.isolate)) {
     const row = el("div", "msg" + (m.own ? " own" : ""));
     const who = el("button", "who", author(m.nickname, m.pubkey));
     who.title = m.own ? "you" : "private message";
@@ -155,7 +181,15 @@ function renderFeed() {
       + (m.own ? ` · ${m.relays.length ? "✓ " + m.relays.length : "…"}` : ""));
     const body = el("div", "body");
     textNodes(body, m.content);
-    row.append(who, meta, body);
+    row.append(who, meta);
+    if (!m.own) {
+      const mute = el("button", "mute", "🔇");
+      mute.title = "mute: hide everything from this key";
+      mute.setAttribute("aria-label", "mute");
+      mute.addEventListener("click", () => command("/api/mute", { pubkey: m.pubkey, muted: true }));
+      row.append(mute);
+    }
+    row.append(body);
     list.append(row);
   }
   box.append(list, composer());
@@ -247,17 +281,89 @@ function renderDms() {
 
 // --- Rendering and live stream ------------------------------------------------------
 
+// --- Saved and scheduled messages ------------------------------------------------
+
+function renderSaved() {
+  const box = document.getElementById("saved");
+  box.replaceChildren(el("h2", null, "Saved messages"));
+  for (const p of state.local.presets) {
+    const row = el("div", "row");
+    const send = el("button", null, "send");
+    send.addEventListener("click", async () => {
+      const { ok, data } = await command("/api/preset/send", { id: p.id, cell: state.selected });
+      if (!ok) alert((data && data.message) || "refused");
+    });
+    const del = el("button", null, "×");
+    del.title = "delete";
+    del.addEventListener("click", () => command("/api/preset/delete", { id: p.id }));
+    row.append(el("b", null, p.name || "(no name)"), el("span", "muted small", " " + p.text + " "), send, del);
+    box.append(row);
+  }
+  const name = el("input");
+  name.placeholder = "name";
+  const text = el("input", "text");
+  text.placeholder = "text to keep";
+  const add = el("button", null, "Save");
+  add.addEventListener("click", async () => {
+    if (!text.value.trim()) return;
+    const { ok } = await command("/api/preset", { name: name.value, text: text.value, nickname: saved("nickname") || null });
+    if (ok) { name.value = ""; text.value = ""; }
+  });
+  const form = el("div", "composer");
+  form.append(name, text, add);
+  box.append(form);
+
+  box.append(el("h2", null, "Scheduled"));
+  for (const sc of state.local.schedules) {
+    const row = el("div", "row");
+    const del = el("button", null, "×");
+    del.title = "delete";
+    del.addEventListener("click", () => command("/api/schedule/delete", { id: sc.id }));
+    const when = sc.next_at ? clock(sc.next_at) : "done";
+    row.append(el("span", null, sc.text + " "),
+      el("span", "muted small", `${when} · ${repeatLabel(sc.repeat_secs)}${sc.cell ? " · #" + sc.cell : ""}`
+        + (sc.last_result ? ` · last: ${sc.last_result}` : "") + " "), del);
+    box.append(row);
+  }
+  const stext = el("input", "text");
+  stext.placeholder = "message to send later";
+  const at = el("input");
+  at.type = "datetime-local";
+  const repeat = el("select");
+  for (const [v, l] of [["", "once"], ["3600", "every hour"], ["86400", "every day"]]) {
+    const o = el("option", null, l);
+    o.value = v;
+    repeat.append(o);
+  }
+  const plan = el("button", null, "Schedule");
+  const result = el("span", "warn small");
+  plan.addEventListener("click", async () => {
+    const when = unixFromLocal(at.value);
+    if (!stext.value.trim() || !when) { result.textContent = "text and time needed"; return; }
+    const { ok, data } = await command("/api/schedule", {
+      text: stext.value, at: when, repeat_secs: repeat.value ? Number(repeat.value) : null,
+      cell: state.selected, nickname: saved("nickname") || null,
+    });
+    if (ok) { stext.value = ""; result.textContent = ""; } else result.textContent = (data && data.message) || "refused";
+  });
+  const sform = el("div", "composer");
+  sform.append(stext, at, repeat, plan, result);
+  box.append(sform, el("p", "muted small", "Scheduled messages go out while the console runs."));
+}
+
 function render() {
   updateTop();
   renderCells();
   renderFeed();
   renderDms();
+  renderSaved();
 }
 
 function onState(d) {
   state.status = d.status;
   state.messages = d.messages;
   state.dms = d.dms;
+  state.local = d.local;
   render();
 }
 
@@ -297,6 +403,7 @@ function connect() {
     renderDms();
   });
   on("relay_text", t => { state.texts.push(t); renderCells(); });
+  on("local", l => { state.local = l; renderCells(); renderFeed(); renderSaved(); });
   source.onerror = () => {
     state.link = "reconnecting";
     updateTop();

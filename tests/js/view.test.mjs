@@ -35,3 +35,15 @@ test("conversations and feed", () => {
   assert.equal(v.statusMark("delivered"), "✓✓");
   assert.equal(v.relayCount({ relays: [{ state: "connected" }, { state: "connecting" }] }), "1/2");
 });
+
+test("muted keys and isolation (lot 8)", () => {
+  const ms = [{ pubkey: "a" }, { pubkey: "b" }, { pubkey: "a" }];
+  assert.deepEqual(v.visible(ms, ["a"], null).map(m => m.pubkey), ["b"]);
+  assert.deepEqual(v.visible(ms, ["a"], "a").map(m => m.pubkey), ["a", "a"]);
+  assert.equal(v.repeatLabel(null), "once");
+  assert.equal(v.repeatLabel(86400), "every day");
+  assert.equal(v.repeatLabel(7200), "every 2 h");
+  assert.equal(v.repeatLabel(900), "every 15 min");
+  assert.equal(v.unixFromLocal("nonsense"), null);
+  assert.ok(v.unixFromLocal("2026-10-28T10:00") > 1_800_000_000 - 1e9);
+});

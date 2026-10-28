@@ -8,6 +8,7 @@
 pub mod arti;
 pub mod connector;
 pub mod console;
+pub mod db;
 pub mod envelope;
 mod error;
 pub mod identity;

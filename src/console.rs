@@ -21,6 +21,7 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use crate::connector::Connector;
+use crate::db::{Db, Preset, Schedule};
 use crate::envelope;
 use crate::error::{Error, Result};
 use crate::identity::Seed;
@@ -50,6 +51,9 @@ pub struct ConsoleConfig {
     pub presence_every: (Duration, Duration),
     /// Relays of private messages: the default relays of both apps.
     pub dm_relays: Vec<String>,
+    /// Local storage (mutes, saved and scheduled messages); `None`: in
+    /// memory, lost at the end.
+    pub db_path: Option<std::path::PathBuf>,
     /// How far back a subscription asks (the apps: 1 h).
     pub lookback_secs: i64,
     /// `limit` of the subscription (the apps: 200).
@@ -74,6 +78,7 @@ impl ConsoleConfig {
             presence: true,
             presence_every: (Duration::from_secs(40), Duration::from_secs(80)),
             dm_relays: default_dm_relays(),
+            db_path: None,
             lookback_secs: 3600,
             limit: 200,
             per_cell: 500,
@@ -176,6 +181,14 @@ pub struct DirectMessage {
     pub status: Option<DmStatus>,
 }
 
+/// What the user keeps locally: muted keys, saved and scheduled messages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Local {
+    pub mutes: Vec<String>,
+    pub presets: Vec<Preset>,
+    pub schedules: Vec<Schedule>,
+}
+
 /// Private messages kept in memory.
 const MAX_DMS: usize = 2000;
 
@@ -202,6 +215,8 @@ pub enum ConsoleEvent {
         id: String,
         status: DmStatus,
     },
+    /// Mutes, saved or scheduled messages changed.
+    Local,
     /// Text from a relay (NOTICE, CLOSED reason): show, never trust.
     RelayText {
         relay: String,
@@ -221,6 +236,12 @@ enum Command {
     },
     Dms(oneshot::Sender<Vec<DirectMessage>>),
     MarkRead(String, oneshot::Sender<usize>),
+    Mute(String, bool, oneshot::Sender<Result<()>>),
+    Local(oneshot::Sender<Result<Local>>),
+    AddPreset(Preset, oneshot::Sender<Result<i64>>),
+    DeletePreset(i64, oneshot::Sender<Result<bool>>),
+    AddSchedule(Schedule, oneshot::Sender<Result<i64>>),
+    DeleteSchedule(i64, oneshot::Sender<Result<bool>>),
     Messages(String, oneshot::Sender<Vec<Message>>),
     Status(oneshot::Sender<AreaStatus>),
     Shutdown,
@@ -237,10 +258,18 @@ pub struct Console {
 impl Console {
     pub fn start(config: ConsoleConfig) -> Console {
         let seed = config.seed.clone();
+        let db = match &config.db_path {
+            Some(p) => Db::open(p).unwrap_or_else(|e| {
+                tracing::error!(error = %e, "local storage unusable, kept in memory for this run");
+                Db::open_in_memory().expect("in-memory SQLite")
+            }),
+            None => Db::open_in_memory().expect("in-memory SQLite"),
+        };
         let (tx, rx) = mpsc::unbounded_channel();
         let (relay_tx, relay_rx) = mpsc::unbounded_channel();
         let (events, _) = broadcast::channel(1024);
         let state = State {
+            db,
             store: Box::new(MemoryStore::new(config.per_cell)),
             config,
             center: None,
@@ -304,23 +333,17 @@ impl Console {
         if !status.cells.iter().any(|c| c.geohash == cell) {
             return Err(Error::NotInArea(cell));
         }
-        let key = self.seed.cell(&cell)?;
-        let mut tags = vec![vec!["g".to_owned(), cell.clone()]];
-        if let Some(n) = nickname.map(str::trim).filter(|n| !n.is_empty()) {
-            tags.push(vec!["n".to_owned(), n.to_owned()]);
-        }
-        if status.teleport {
-            tags.push(vec!["t".to_owned(), "teleport".to_owned()]);
-        }
-        let (text, bits) = (text.to_owned(), status.pow_bits);
+        let (seed, text, nickname) = (
+            self.seed.clone(),
+            text.to_owned(),
+            nickname.map(str::to_owned),
+        );
+        let (teleport, bits) = (status.teleport, status.pow_bits);
         let event = tokio::task::spawn_blocking(move || {
-            let pubkey = key.pubkey_hex();
-            let at = unix_now();
-            let tags = crate::pow::mine(&pubkey, at, KIND_MESSAGE, &tags, &text, bits);
-            Event::signed(key.signing_key(), at, KIND_MESSAGE, tags, text)
+            build_message(&seed, &cell, &text, nickname.as_deref(), teleport, bits)
         })
         .await
-        .map_err(|_| Error::ConsoleStopped)?;
+        .map_err(|_| Error::ConsoleStopped)??;
         self.ask(|r| Command::Publish(Box::new(event), r)).await?
     }
 
@@ -354,6 +377,92 @@ impl Console {
         self.ask(|r| Command::MarkRead(p, r)).await
     }
 
+    /// Hides (or shows again) everything from a key, locally (D25).
+    pub async fn set_muted(&self, pubkey: &str, muted: bool) -> Result<()> {
+        let p = pubkey.to_lowercase();
+        if p.len() != 64 || !p.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(Error::InvalidKey(p));
+        }
+        self.ask(|r| Command::Mute(p, muted, r)).await?
+    }
+
+    /// Muted keys, saved and scheduled messages.
+    pub async fn local(&self) -> Result<Local> {
+        self.ask(Command::Local).await?
+    }
+
+    /// Saves a message to send later on demand. Returns its id.
+    pub async fn add_preset(
+        &self,
+        name: &str,
+        text: &str,
+        cell: Option<&str>,
+        nickname: Option<&str>,
+    ) -> Result<i64> {
+        if text.trim().is_empty() {
+            return Err(Error::EmptyMessage);
+        }
+        let p = Preset {
+            id: 0,
+            name: name.trim().to_owned(),
+            text: text.to_owned(),
+            cell: cell.map(str::to_lowercase),
+            nickname: nickname.map(str::to_owned),
+        };
+        self.ask(|r| Command::AddPreset(p, r)).await?
+    }
+
+    pub async fn delete_preset(&self, id: i64) -> Result<bool> {
+        self.ask(|r| Command::DeletePreset(id, r)).await?
+    }
+
+    /// Sends a saved message, in `cell` if given, else in its own cell, else
+    /// in the centre.
+    pub async fn send_preset(&self, id: i64, cell: Option<&str>) -> Result<Message> {
+        let p = self
+            .local()
+            .await?
+            .presets
+            .into_iter()
+            .find(|p| p.id == id)
+            .ok_or(Error::NotFound(id))?;
+        let cell = cell.map(str::to_owned).or(p.cell);
+        self.send(&p.text, cell.as_deref(), p.nickname.as_deref())
+            .await
+    }
+
+    /// Sends `text` at `at` (Unix time), then every `repeat_secs` if given,
+    /// while the console runs. Returns its id.
+    pub async fn add_schedule(
+        &self,
+        text: &str,
+        cell: Option<&str>,
+        nickname: Option<&str>,
+        at: i64,
+        repeat_secs: Option<i64>,
+    ) -> Result<i64> {
+        if text.trim().is_empty() {
+            return Err(Error::EmptyMessage);
+        }
+        if repeat_secs.is_some_and(|r| r < 60) {
+            return Err(Error::Schedule("repeat at most once a minute".into()));
+        }
+        let s = Schedule {
+            id: 0,
+            text: text.to_owned(),
+            cell: cell.map(str::to_lowercase),
+            nickname: nickname.map(str::to_owned),
+            next_at: Some(at),
+            repeat_secs,
+            last_result: None,
+        };
+        self.ask(|r| Command::AddSchedule(s, r)).await?
+    }
+
+    pub async fn delete_schedule(&self, id: i64) -> Result<bool> {
+        self.ask(|r| Command::DeleteSchedule(id, r)).await?
+    }
+
     /// The messages of a cell, oldest first.
     pub async fn messages(&self, cell: &str) -> Result<Vec<Message>> {
         let c = cell.to_owned();
@@ -374,6 +483,36 @@ impl Console {
         let _ = self.tx.send(Command::Shutdown);
         let _ = self.task.await;
     }
+}
+
+/// A channel message as the app writes it: tags `g`, `n`, `t=teleport`,
+/// then the mined nonce; signed with the key of the cell.
+fn build_message(
+    seed: &Seed,
+    cell: &str,
+    text: &str,
+    nickname: Option<&str>,
+    teleport: bool,
+    pow_bits: u32,
+) -> Result<Event> {
+    let key = seed.cell(cell)?;
+    let mut tags = vec![vec!["g".to_owned(), cell.to_owned()]];
+    if let Some(n) = nickname.map(str::trim).filter(|n| !n.is_empty()) {
+        tags.push(vec!["n".to_owned(), n.to_owned()]);
+    }
+    if teleport {
+        tags.push(vec!["t".to_owned(), "teleport".to_owned()]);
+    }
+    let pubkey = key.pubkey_hex();
+    let at = unix_now();
+    let tags = crate::pow::mine(&pubkey, at, KIND_MESSAGE, &tags, text, pow_bits);
+    Ok(Event::signed(
+        key.signing_key(),
+        at,
+        KIND_MESSAGE,
+        tags,
+        text.to_owned(),
+    ))
 }
 
 /// Event ids already handled, bounded.
@@ -406,6 +545,7 @@ impl Seen {
 
 struct State {
     config: ConsoleConfig,
+    db: Db,
     store: Box<dyn MessageStore>,
     center: Option<String>,
     teleport: bool,
@@ -437,6 +577,8 @@ impl State {
         mut relays: mpsc::UnboundedReceiver<RelayEvent>,
     ) {
         let mut tick = tokio::time::interval(Duration::from_secs(30));
+        let mut schedules = tokio::time::interval(Duration::from_secs(1));
+        schedules.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             let presence = self.next_presence;
             tokio::select! {
@@ -446,6 +588,7 @@ impl State {
                 },
                 Some(e) = relays.recv() => self.on_relay(e),
                 _ = tick.tick() => self.on_tick(),
+                _ = schedules.tick() => self.send_due(),
                 _ = async {
                     match presence {
                         Some(at) => tokio::time::sleep_until(at).await,
@@ -482,6 +625,42 @@ impl State {
             }
             Command::MarkRead(peer, reply) => {
                 let _ = reply.send(self.mark_read(&peer));
+            }
+            Command::Mute(pubkey, muted, reply) => {
+                let r = self.db.set_muted(&pubkey, muted, unix_now());
+                self.local_changed();
+                let _ = reply.send(r);
+            }
+            Command::Local(reply) => {
+                let _ = reply.send(self.local());
+            }
+            Command::AddPreset(p, reply) => {
+                let r =
+                    self.db
+                        .add_preset(&p.name, &p.text, p.cell.as_deref(), p.nickname.as_deref());
+                self.local_changed();
+                let _ = reply.send(r);
+            }
+            Command::DeletePreset(id, reply) => {
+                let r = self.db.delete_preset(id);
+                self.local_changed();
+                let _ = reply.send(r);
+            }
+            Command::AddSchedule(s, reply) => {
+                let r = self.db.add_schedule(
+                    &s.text,
+                    s.cell.as_deref(),
+                    s.nickname.as_deref(),
+                    s.next_at.unwrap_or_else(unix_now),
+                    s.repeat_secs,
+                );
+                self.local_changed();
+                let _ = reply.send(r);
+            }
+            Command::DeleteSchedule(id, reply) => {
+                let r = self.db.delete_schedule(id);
+                self.local_changed();
+                let _ = reply.send(r);
             }
             Command::Messages(cell, reply) => {
                 let _ = reply.send(self.store.cell(&cell));
@@ -810,6 +989,65 @@ impl State {
             }
             other => tracing::debug!(%cell, payload = other, "private payload not handled yet"),
         }
+    }
+
+    fn local(&self) -> Result<Local> {
+        Ok(Local {
+            mutes: self.db.mutes()?,
+            presets: self.db.presets()?,
+            schedules: self.db.schedules()?,
+        })
+    }
+
+    fn local_changed(&self) {
+        self.emit(ConsoleEvent::Local);
+    }
+
+    /// Sends the scheduled messages that are due, in the area as it is now:
+    /// a schedule whose cell is not followed is skipped, and says so.
+    fn send_due(&mut self) {
+        let now = unix_now();
+        let due = match self.db.due(now) {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!(error = %e, "schedules unreadable");
+                return;
+            }
+        };
+        if due.is_empty() {
+            return;
+        }
+        for s in due {
+            let result = match self.scheduled_event(&s) {
+                Ok(event) => match self.publish_message(event) {
+                    Ok(_) => "sent".to_owned(),
+                    Err(e) => format!("skipped: {e}"),
+                },
+                Err(e) => format!("skipped: {e}"),
+            };
+            tracing::info!(schedule = s.id, %result, "scheduled message");
+            if let Err(e) = self.db.advance(s.id, now, &result) {
+                tracing::warn!(error = %e, "schedule not updated");
+            }
+        }
+        self.local_changed();
+    }
+
+    /// The message of a schedule, built as `Console::send` builds one.
+    fn scheduled_event(&self, s: &Schedule) -> Result<Event> {
+        let center = self.center.clone().ok_or(Error::NoArea)?;
+        let cell = s.cell.clone().unwrap_or(center);
+        if !self.cells.contains(&cell) {
+            return Err(Error::NotInArea(cell));
+        }
+        build_message(
+            &self.config.seed,
+            &cell,
+            &s.text,
+            s.nickname.as_deref(),
+            self.teleport,
+            self.config.pow_bits,
+        )
     }
 
     /// One presence per presence cell, each signed with that cell's key,

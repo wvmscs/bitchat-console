@@ -38,6 +38,12 @@ pub enum Error {
     NoRelayList { platform: String, reason: String },
     #[error("HTTP: {0}")]
     Http(String),
+    #[error("no saved message {0}")]
+    NotFound(i64),
+    #[error("schedule: {0}")]
+    Schedule(String),
+    #[error("database: {0}")]
+    Db(String),
     #[error("TLS: {0}")]
     Tls(String),
     /// A non-loopback address without `--allow-remote`.

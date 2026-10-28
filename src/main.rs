@@ -254,6 +254,11 @@ async fn main() {
     let strategy = Arc::new(AppStrategy::new(Some(ios), android, args.apps));
     let mut config = ConsoleConfig::new(strategy, tor, Arc::new(keys.seed));
     config.presence = args.presence;
+    let db_path = args.data_dir.join(bitchat_console::db::DB_FILE);
+    if let Err(e) = bitchat_console::db::Db::open(&db_path) {
+        fail(&format!("local storage {}", db_path.display()), e);
+    }
+    config.db_path = Some(db_path);
     if let Some(dm) = args.dm_relays.clone() {
         config.dm_relays = dm;
     }

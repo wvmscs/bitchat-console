@@ -14,7 +14,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 5 | Écriture : messages, preuve de travail, présences, marque `teleport` | ✅ |
 | 6 | Messages privés (enveloppe BitChat `v2:`, relais par défaut) | ✅ |
 | 7 | Serveur web et page console | ✅ |
-| 8 | Masquage, isolation d'un intervenant, messages préenregistrés et planifiés | ⬜ |
+| 8 | Masquage, isolation d'un intervenant, messages préenregistrés et planifiés | ✅ |
 | 9 | Superposition à la carte de bitchat-geohash | ⬜ |
 | 10 | Groupes mixtes (transport Nostr, entre consoles) | ⬜ |
 | 11 | Feature `arti` | ✅ |
@@ -195,11 +195,30 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       relais de l'utilisateur, page pilotée dans Chrome headless (flux en direct, 9 cellules
       connectées, message envoyé depuis la page et accepté par le relais, console propre).
 
-### Lot 8 : masquage et messages préenregistrés ⬜
+### Lot 8 : masquage et messages préenregistrés ✅
 
-- [ ] Mute, démasquage, fenêtre dédiée à un intervenant ; liste locale.
-- [ ] Messages préenregistrés : envoi sur demande ; planification (date, répétition) tant que
-      la console tourne. Stockage local (D16).
+- [x] Stockage local SQLite (`db.rs`, `console.sqlite` dans le dossier de données, fichier en
+      `0600`) : migrations numérotées, version refusée si plus récente (comme
+      bitchat-geohash). `rusqlite` 0.40, la plage qu'accepte Arti (une seule bibliothèque
+      sqlite3 liée).
+- [x] Masquage (D25) : `set_muted(clé)` ; tous les messages de cette clé cachés dans la page,
+      démasquage, ou **fenêtre d'isolement** (le fil ne montre plus que cette clé) ; liste
+      conservée au redémarrage (clé et date seulement). Une même personne a une clé par
+      cellule : le masquage vaut pour la clé.
+- [x] Messages préenregistrés : enregistrement (nom, texte, cellule et pseudo facultatifs),
+      envoi sur demande (dans la cellule choisie, la sienne ou le centre), suppression.
+- [x] Messages planifiés : date, une fois ou à intervalle (au plus une fois par minute) ;
+      envoyés par la console à l'échéance (vérification chaque seconde), construits comme un
+      envoi normal ; une cellule non suivie est ignorée avec le motif ; une échéance manquée
+      n'est pas rattrapée (prochaine occurrence future) ; dernier résultat affiché.
+- [x] API (`/api/mute`, `/api/preset`, `/api/preset/delete`, `/api/preset/send`,
+      `/api/schedule`, `/api/schedule/delete`, événement SSE `local`) et page (🔇 par message,
+      liste « Muted » avec « isolate » et « unmute », sections « Saved messages » et
+      « Scheduled »).
+- [x] Tests : masqués conservés après redémarrage et fichier privé, préenregistré envoyé dans
+      un voisin, planifié envoyé à l'échéance, répétition reportée au lendemain, cellule hors
+      zone ignorée, refus ; 5 tests `node`. Essai du binaire réel (Arti, relais de
+      l'utilisateur) : sections présentes, message enregistré puis envoyé depuis la page.
 
 ### Lot 9 : superposition à la carte ⬜
 
@@ -253,6 +272,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D22 | Présence et téléportation | Comme l'app : en mode « sur place », présences (tag `g` seul, jamais `teleport`, comme iOS) ; en mode « téléporté », messages `t=teleport` et aucune présence (un utilisateur téléporté de l'app n'en envoie pas) — *prise par l'agent, à revoir* | ✅ |
 | D23 | Paquets compressés reçus | Lecture des charges compressées (DEFLATE brut, comme `CompressionUtil`) avec la petite crate `miniz_oxide` (hors D15), bornée en taille et en taux ; à l'envoi, pas de compression (l'app lit les deux, et rien n'en paraît hors de l'enveloppe) — *prise par l'agent, à revoir* | ✅ |
 | D24 | Tor par défaut | Arti (dans le binaire) quand le binaire est construit avec la feature `arti`, sinon le démon `tor` en SOCKS `127.0.0.1:9050` ; `--tor-socks` ou `--arti` pour choisir — *prise par l'agent, à revoir* | ✅ |
+| D25 | Masqués sur disque | La liste des masqués est enregistrée (clé publique et date seulement, jamais pseudo ni contenu) : c'est un choix volontaire de l'utilisateur, utile après un redémarrage ; la base est en `0600` — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -282,3 +302,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 11 | Feature `arti` (avancée avant le lot 6). Premier essai bloqué : le GET des listes ne partait pas (pas de `flush` après l'écriture TLS) et attendait une fin de flux que le CDN ne donne pas ; diagnostic pas à pas par Tor, deux corrections, test ajouté. Essai réel complet par Tor sur le relais de l'utilisateur : boucle fermée en 0,11 s. 29 tests (+ 2 réels `--ignored`), clippy propre avec et sans `arti`. |
 | 28/10/2026 | 6 | DM : `packet.rs`, `envelope.rs` (vecteurs identiques au code Swift de l'app), boîtes de réception, accusés. Les tests et l'essai réel n'utilisent jamais les relais par défaut réels (relais de test, ou celui de l'utilisateur). 39 tests (+ réels), clippy propre avec et sans `arti`. Essai réel par Tor : DM en 0,26 s, accusé en 0,37 s. Reste l'essai avec l'app (lot 12). |
 | 28/10/2026 | 7 | Serveur, API, page, ligne de commande. 48 tests Rust, 4 `node` ; clippy propre avec et sans `arti`. Essai réel du binaire par Tor sur le relais de l'utilisateur, page dans Chrome headless. |
+| 28/10/2026 | 8 | Stockage local, masquage et isolement, préenregistrés, planifiés. Conflit `rusqlite` 0.41 / Arti résolu en 0.40. Base créée en `0644` repérée à l'essai réel → `0600`, test ajouté. 49 tests, 5 `node`, clippy propre avec et sans `arti`. |

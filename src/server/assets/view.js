@@ -80,3 +80,24 @@ export function relayCount(cell) {
   const up = cell.relays.filter(r => r.state === "connected").length;
   return `${up}/${cell.relays.length}`;
 }
+
+// Messages to show: without muted keys; only one key when isolated.
+export function visible(messages, mutes, isolate) {
+  if (isolate) return messages.filter(m => m.pubkey === isolate);
+  const muted = new Set(mutes);
+  return messages.filter(m => !muted.has(m.pubkey));
+}
+
+// "every day", "every hour", "every 15 min", "once".
+export function repeatLabel(secs) {
+  if (!secs) return "once";
+  if (secs % 86400 === 0) return secs === 86400 ? "every day" : `every ${secs / 86400} days`;
+  if (secs % 3600 === 0) return secs === 3600 ? "every hour" : `every ${secs / 3600} h`;
+  return `every ${Math.round(secs / 60)} min`;
+}
+
+// `<input type="datetime-local">` value -> Unix time (local time zone).
+export function unixFromLocal(value) {
+  const t = new Date(value).getTime();
+  return Number.isFinite(t) ? Math.floor(t / 1000) : null;
+}

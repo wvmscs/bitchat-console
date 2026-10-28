@@ -61,6 +61,8 @@ impl From<Error> for ApiError {
             Error::DmTooLong => (StatusCode::BAD_REQUEST, "too_long"),
             Error::InvalidKey(_) => (StatusCode::BAD_REQUEST, "invalid_key"),
             Error::ConsoleStopped => (StatusCode::SERVICE_UNAVAILABLE, "stopped"),
+            Error::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
+            Error::Schedule(_) => (StatusCode::BAD_REQUEST, "bad_schedule"),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         ApiError::new(status, code, message)
@@ -81,7 +83,8 @@ async fn snapshot(console: &Console) -> Result<Value, Error> {
         messages.insert(c.geohash.clone(), console.messages(&c.geohash).await?);
     }
     let dms = console.dms().await?;
-    Ok(json!({ "status": status, "messages": messages, "dms": dms }))
+    let local = console.local().await?;
+    Ok(json!({ "status": status, "messages": messages, "dms": dms, "local": local }))
 }
 
 /// `GET /api/state`.
@@ -126,6 +129,7 @@ pub(crate) async fn events(State(s): State<AppState>) -> Response {
                 Ok(ConsoleEvent::DmStatus { id, status }) => {
                     ("dm_status", json!({ "id": id, "status": status }))
                 }
+                Ok(ConsoleEvent::Local) => ("local", json!(console.local().await.ok()?)),
                 Ok(ConsoleEvent::RelayText { relay, cell, text }) => (
                     "relay_text",
                     json!({ "relay": relay, "cell": cell, "text": text }),
@@ -208,4 +212,110 @@ pub(crate) async fn read(
 ) -> Result<Json<Value>, ApiError> {
     let Json(b) = body?;
     Ok(Json(json!({ "read": s.console.mark_read(&b.peer).await? })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct MuteBody {
+    pubkey: String,
+    muted: bool,
+}
+
+/// `POST /api/mute {"pubkey": hex, "muted": true}`.
+pub(crate) async fn mute(
+    State(s): State<AppState>,
+    body: Result<Json<MuteBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    s.console.set_muted(&b.pubkey, b.muted).await?;
+    Ok(Json(json!({ "muted": b.muted })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PresetBody {
+    #[serde(default)]
+    name: String,
+    text: String,
+    cell: Option<String>,
+    nickname: Option<String>,
+}
+
+/// `POST /api/preset {"name", "text", "cell"?, "nickname"?}`.
+pub(crate) async fn add_preset(
+    State(s): State<AppState>,
+    body: Result<Json<PresetBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    let id = s
+        .console
+        .add_preset(&b.name, &b.text, b.cell.as_deref(), b.nickname.as_deref())
+        .await?;
+    Ok(Json(json!({ "id": id })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct IdBody {
+    id: i64,
+    cell: Option<String>,
+}
+
+/// `POST /api/preset/delete {"id"}`.
+pub(crate) async fn delete_preset(
+    State(s): State<AppState>,
+    body: Result<Json<IdBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    Ok(Json(
+        json!({ "deleted": s.console.delete_preset(b.id).await? }),
+    ))
+}
+
+/// `POST /api/preset/send {"id", "cell"?}`.
+pub(crate) async fn send_preset(
+    State(s): State<AppState>,
+    body: Result<Json<IdBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    Ok(Json(json!(
+        s.console.send_preset(b.id, b.cell.as_deref()).await?
+    )))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ScheduleBody {
+    text: String,
+    cell: Option<String>,
+    nickname: Option<String>,
+    /// Unix time.
+    at: i64,
+    repeat_secs: Option<i64>,
+}
+
+/// `POST /api/schedule {"text", "at", "repeat_secs"?, "cell"?, "nickname"?}`.
+pub(crate) async fn add_schedule(
+    State(s): State<AppState>,
+    body: Result<Json<ScheduleBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    let id = s
+        .console
+        .add_schedule(
+            &b.text,
+            b.cell.as_deref(),
+            b.nickname.as_deref(),
+            b.at,
+            b.repeat_secs,
+        )
+        .await?;
+    Ok(Json(json!({ "id": id })))
+}
+
+/// `POST /api/schedule/delete {"id"}`.
+pub(crate) async fn delete_schedule(
+    State(s): State<AppState>,
+    body: Result<Json<IdBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    Ok(Json(
+        json!({ "deleted": s.console.delete_schedule(b.id).await? }),
+    ))
 }
