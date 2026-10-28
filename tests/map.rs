@@ -132,7 +132,7 @@ async fn the_map_with_the_console_over_it() {
     let host = ("Host", addr.to_string());
 
     // The map page, with the console's overlay and a frame allowed.
-    let (status, head, body) = http(addr, "GET", "/", &[host.clone()]).await;
+    let (status, head, body) = http(addr, "GET", "/", std::slice::from_ref(&host)).await;
     assert_eq!(status, 200);
     assert!(
         body.contains("/console/assets/overlay.js") && body.contains("<div id=map>"),
@@ -148,13 +148,25 @@ async fn the_map_with_the_console_over_it() {
     );
 
     // The console at /console/, its API there too.
-    let (status, _, body) = http(addr, "GET", "/console/", &[host.clone()]).await;
+    let (status, _, body) = http(addr, "GET", "/console/", std::slice::from_ref(&host)).await;
     assert_eq!(status, 200);
     assert!(body.contains("BitChat console"));
-    let (status, _, body) = http(addr, "GET", "/console/api/state", &[host.clone()]).await;
+    let (status, _, body) = http(
+        addr,
+        "GET",
+        "/console/api/state",
+        std::slice::from_ref(&host),
+    )
+    .await;
     assert_eq!(status, 200);
     assert!(body.contains("\"center\":\"u09tv\""));
-    let (status, _, _) = http(addr, "GET", "/console/assets/overlay.css", &[host.clone()]).await;
+    let (status, _, _) = http(
+        addr,
+        "GET",
+        "/console/assets/overlay.css",
+        std::slice::from_ref(&host),
+    )
+    .await;
     assert_eq!(status, 200);
 
     // A command of the map page goes through with the map's own origin.
