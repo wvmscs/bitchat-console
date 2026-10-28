@@ -43,7 +43,8 @@ Run the binary with a wrong option to list them all (`--teleport`, `--tor-socks`
 ## Privacy
 
 Received messages, nicknames and keys stay in memory; nothing about other people is written
-to disk or to the logs, except the keys you mute. Images in messages are shown as links and
+to disk or to the logs, except the keys you mute. Your own nickname, and the cells where you
+choose not to send it, are kept in `console.sqlite` (readable by you only). Images in messages are shown as links and
 never loaded. With `--map`, the map tiles are loaded by the browser directly, not through Tor.
 
 ## Tests

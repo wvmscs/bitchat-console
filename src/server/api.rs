@@ -251,6 +251,41 @@ pub(crate) async fn mute(
 }
 
 #[derive(Deserialize)]
+pub(crate) struct NicknameBody {
+    nickname: Option<String>,
+}
+
+/// `POST /api/nickname {"nickname": "bob"}`: for every cell (D32); empty or
+/// null removes it.
+pub(crate) async fn nickname(
+    State(s): State<AppState>,
+    body: Result<Json<NicknameBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    s.console.set_nickname(b.nickname.as_deref()).await?;
+    Ok(Json(
+        json!({ "nickname": s.console.local().await?.nickname }),
+    ))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct AnonBody {
+    cell: String,
+    anon: bool,
+}
+
+/// `POST /api/anon {"cell": "u09tv", "anon": true}`: the nickname is not sent
+/// in that cell (D32).
+pub(crate) async fn anon(
+    State(s): State<AppState>,
+    body: Result<Json<AnonBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    s.console.set_anon(&b.cell, b.anon).await?;
+    Ok(Json(json!({ "anon": b.anon })))
+}
+
+#[derive(Deserialize)]
 pub(crate) struct PresetBody {
     #[serde(default)]
     name: String,

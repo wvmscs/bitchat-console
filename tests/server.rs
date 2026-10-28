@@ -9,7 +9,7 @@ use bitchat_console::connector::Loopback;
 use bitchat_console::console::{Console, KIND_MESSAGE};
 use bitchat_console::server::{Asset, ServerConfig, serve};
 use common::*;
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
@@ -133,6 +133,20 @@ async fn page_and_state() {
     assert_eq!((status, body.as_str()), (200, "[]"));
     let (status, _) = http(r.addr, "GET", "/api/participants", &[r.host()], "").await;
     assert_eq!(status, 400);
+    // The nickname and the cells where it is not sent, in the state (D32).
+    assert_eq!(v["local"]["nickname"], Value::Null);
+    let (status, b) = r.post("/api/nickname", r#"{"nickname":" bob "}"#).await;
+    assert_eq!((status, b["nickname"].as_str()), (200, Some("bob")));
+    let (status, _) = r.post("/api/anon", r#"{"cell":"u09ty","anon":true}"#).await;
+    assert_eq!(status, 200);
+    let (status, b) = r.post("/api/anon", r#"{"cell":"u09","anon":true}"#).await;
+    assert_eq!((status, b["error"].as_str()), (400, Some("not_a_channel")));
+    let (_, body) = http(r.addr, "GET", "/api/state", &[r.host()], "").await;
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        (&v["local"]["nickname"], &v["local"]["anon_cells"]),
+        (&json!("bob"), &json!(["u09ty"]))
+    );
 }
 
 #[tokio::test]

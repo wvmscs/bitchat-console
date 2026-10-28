@@ -1,7 +1,8 @@
 //! Local storage (lot 8, D16): SQLite in the data directory, for what the
 //! user decides only: muted keys, saved messages, schedules, groups, the IDs
-//! of the private messages read (D29). Never received contents, nicknames
-//! or the keys of others, mutes aside (D11, D25). Append-only numbered migrations, as in
+//! of the private messages read (D29), the user's own nickname and the cells
+//! where it is not sent (D32). Never received contents, nicknames or the keys
+//! of others, mutes aside (D11, D25). Append-only numbered migrations, as in
 //! bitchat-geohash.
 
 use std::path::Path;
@@ -15,6 +16,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("migrations/0001_init.sql")),
     ("0002_groups", include_str!("migrations/0002_groups.sql")),
     ("0003_read", include_str!("migrations/0003_read.sql")),
+    (
+        "0004_nickname",
+        include_str!("migrations/0004_nickname.sql"),
+    ),
 ];
 
 /// How long a read private message is remembered (relays rarely keep
@@ -317,6 +322,72 @@ impl Db {
     }
 }
 
+impl Db {
+    /// The user's nickname (D32), if set.
+    pub fn nickname(&self) -> Result<Option<String>> {
+        self.conn
+            .query_row(
+                "SELECT value FROM setting WHERE key = 'nickname'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(sql)
+    }
+
+    /// Sets the nickname; empty or `None` removes it.
+    pub fn set_nickname(&self, nickname: Option<&str>) -> Result<()> {
+        match nickname.map(str::trim).filter(|n| !n.is_empty()) {
+            Some(n) => self.conn.execute(
+                "INSERT INTO setting (key, value) VALUES ('nickname', ?1) \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![n],
+            ),
+            None => self
+                .conn
+                .execute("DELETE FROM setting WHERE key = 'nickname'", []),
+        }
+        .map_err(sql)?;
+        Ok(())
+    }
+
+    /// Cells where the nickname is not sent.
+    pub fn anon_cells(&self) -> Result<Vec<String>> {
+        let mut st = self
+            .conn
+            .prepare("SELECT geohash FROM anon_cell ORDER BY geohash")
+            .map_err(sql)?;
+        let rows = st.query_map([], |r| r.get(0)).map_err(sql)?;
+        rows.collect::<std::result::Result<_, _>>().map_err(sql)
+    }
+
+    pub fn is_anon(&self, cell: &str) -> Result<bool> {
+        self.conn
+            .query_row(
+                "SELECT 1 FROM anon_cell WHERE geohash = ?1",
+                params![cell],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|r| r.is_some())
+            .map_err(sql)
+    }
+
+    pub fn set_anon(&self, cell: &str, anon: bool, at: i64) -> Result<()> {
+        if anon {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO anon_cell (geohash, at) VALUES (?1, ?2)",
+                params![cell, at],
+            )
+        } else {
+            self.conn
+                .execute("DELETE FROM anon_cell WHERE geohash = ?1", params![cell])
+        }
+        .map_err(sql)?;
+        Ok(())
+    }
+}
+
 fn sql(e: rusqlite::Error) -> Error {
     Error::Db(e.to_string())
 }
@@ -371,6 +442,24 @@ mod tests {
         );
         assert_eq!(get(every).next_at, Some(280));
         assert!(db.due(279).unwrap().is_empty());
+    }
+
+    #[test]
+    fn nickname_and_anonymous_cells() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(db.nickname().unwrap(), None);
+        db.set_nickname(Some(" bob ")).unwrap();
+        db.set_nickname(Some("alice")).unwrap();
+        assert_eq!(db.nickname().unwrap().as_deref(), Some("alice"));
+        db.set_nickname(Some("  ")).unwrap();
+        assert_eq!(db.nickname().unwrap(), None);
+
+        db.set_anon("u09tv", true, 1).unwrap();
+        db.set_anon("u09tv", true, 2).unwrap();
+        db.set_anon("u09ty", true, 3).unwrap();
+        assert_eq!(db.anon_cells().unwrap(), ["u09tv", "u09ty"]);
+        db.set_anon("u09tv", false, 4).unwrap();
+        assert!(!db.is_anon("u09tv").unwrap() && db.is_anon("u09ty").unwrap());
     }
 
     #[test]

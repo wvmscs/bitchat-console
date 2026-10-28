@@ -19,9 +19,16 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 10 | Groupes mixtes (transport Nostr, entre consoles) | ✅ |
 | 11 | Feature `arti` | ✅ |
 | 12 | Validation réelle | ⏳ (avec l'utilisateur) |
+| 13 | Zones de saisie (défilement), pseudo côté serveur, envoi du pseudo par cellule (D32) | ✅ |
+| 14 | Base d'historique `history.sqlite` (D31) : schéma, écriture, droits, recréation | ☐ |
+| 15 | Critère de départ (10 min) : messages grisés, DM cachés, effacement des DM | ☐ |
+| 16 | Onglet d'historique : recherche, tri, sélection, effacement ; modifications externes en direct | ☐ |
+| 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ☐ |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
 8 dépend de 5 et 7 ; 9 dépend de 7 ; 10 dépend de 6 ; 11 dépend de 2 ; 12 clôt l'étape.
+Évolutions de l'interface ([EVOLUTION_01-UI.md](EVOLUTION_01-UI.md)) : 13 indépendant ; 15 et 16
+dépendent de 14 ; 17 dépend de 14 et 16.
 
 ## Lots
 
@@ -335,6 +342,83 @@ Fait par l'agent, seul :
 - [ ] Safari.
 - [ ] Revue des décisions prises par l'agent (D19 à D27).
 
+### Lot 13 : saisie et pseudo ✅
+
+Demandé dans [EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) (28/10/2026).
+
+- [x] Zones de saisie : au bout du champ, le texte tapé sort de la vue. Cause : la
+      reconstruction d'une section par un événement en direct rend valeur, focus et curseur,
+      pas `scrollLeft` (`app.js`, conservation des champs). Les champs gardent désormais leur
+      défilement ; les champs de message (canal, DM, groupes, préenregistrés, planifiés) sont
+      des `textarea` qui grandissent avec le texte jusqu'à 8 lignes environ, puis défilent
+      (Entrée envoie, Maj+Entrée va à la ligne).
+- [x] Pseudo gardé côté serveur (`console.sqlite`, migration `0004_nickname`, table
+      `setting`), plus dans le `localStorage` (propre à l'origine : perdu quand le port change,
+      ce que fait le lanceur si 8080 est pris, ou entre HTTP et HTTPS). Le même pour toutes les
+      cellules (D32). Celui d'une page plus ancienne est repris une fois du navigateur.
+      `POST /api/nickname`, `Local.nickname`.
+- [x] Par cellule, choix « envoyer mon pseudo » ; sinon, pas de tag `n` (D32). L'app affiche
+      `anon#xxxx` **seulement si elle n'a encore aucun pseudo pour cette clé** : elle garde en
+      mémoire le dernier pseudo vu par clé (`LocationPresenceStore.setNickname`), jusqu'à son
+      changement de canal ou son redémarrage, et la clé d'une cellule est stable. Un pseudo
+      déjà envoyé dans une cellule y reste attaché à la clé (dans l'app et chez tout relais qui
+      garde les événements) ; la page le dit (infobulle de la case). Case « nickname in
+      #… » à côté du pseudo, pour la cellule choisie ; table `anon_cell`, `POST /api/anon`,
+      `Local.anon_cells`. Une cellule sans pseudo l'emporte sur un pseudo donné.
+- [x] Préenregistrés et planifiés : le pseudo pris à l'envoi (dernière version), plus celui de
+      la création (un pseudo propre au message reste possible par l'API). Groupes : le pseudo
+      de la console quand la page n'en donne pas.
+- [x] DM : le `PrivateMessagePacket` de l'app ne porte qu'un ID et un contenu (TLV `0x00`,
+      `0x01`) ; D17 interdit d'y ajouter le pseudo. L'app nomme l'expéditeur d'un DM avec le
+      même cache (`displayNameForNostrPubkey` : pseudo connu de la clé, sinon `anon#xxxx`) :
+      le pseudo vu dans les DM est celui d'un message de canal antérieur.
+      Les groupes le portent déjà.
+
+### Lot 14 : base d'historique ☐
+
+- [ ] `history.sqlite`, à part de `console.sqlite` (D31) : active par défaut ; messages de
+      canal, DM et groupes, reçus et émis, y compris ceux des masqués.
+- [ ] Schéma : type (canal, DM, groupe), sens, geohash, horodatages (événement, réception),
+      émetteur, destinataire, pseudo, téléporté, contenu, ID de l'événement (dédoublonnage
+      entre relais), ID BitChat du DM, état délivré ou lu, marque d'effacement.
+- [ ] Fichier, `-wal` et `-shm` en `0600`, dossier en `0700` ; mode WAL, `busy_timeout`
+      (un outil externe écrit en même temps).
+- [ ] Base détruite (effacement complet par le cron) : recréée vide par la console, même en
+      marche (le fichier est surveillé).
+- [ ] DM effacés : leur ID gardé (comme `dm_read`, D29), sinon les relais les renvoient au
+      prochain lancement.
+- [ ] Relecture de la base quand une cellule est de nouveau sélectionnée.
+- [ ] `AGENTS.md` : la règle « rien sur disque » renvoie à D31.
+
+### Lot 15 : départ des intervenants ☐
+
+- [ ] Critère : ni présence (20001) ni message (20000) d'une clé dans la cellule depuis
+      10 min (réglable). Un téléporté n'envoie jamais de présence (D22) : seuls ses messages
+      comptent.
+- [ ] Messages de canal grisés (lisibles) quand leur auteur est parti.
+- [ ] DM : conversations cachées quand le correspondant est parti, jamais tant qu'un message
+      n'est pas lu ; un nouveau message les rouvre ; toujours lisibles dans l'historique.
+- [ ] Effacement des DM par l'utilisateur (local : les relais gardent les enveloppes).
+- [x] Décidé par l'utilisateur (28/10/2026) : la console qui suit une autre cellule ne quitte
+      pas ses échanges en cours ; seul le départ du correspondant compte.
+
+### Lot 16 : onglet d'historique ☐
+
+- [ ] Page `/history?cell=…`, ouverte dans un nouvel onglet : recherche (FTS5 du SQLite
+      intégré, à vérifier), sélection, tri, effacement.
+- [ ] Modifications faites par un autre processus (IA, cron) visibles au plus tôt :
+      `PRAGMA data_version` interrogé chaque seconde, table de changements remplie par des
+      triggers, diffusion par le flux SSE existant.
+
+### Lot 17 : API, outil batch, `SKILL.md` ☐
+
+- [ ] API CRUD HTTP de la console (`/api/history…`, gardée comme les autres par Host et
+      Origin).
+- [ ] Outil `bitchat-history` sur la même base, console arrêtée ou non : requêtes, suppression
+      d'enregistrements, sauvegarde, rotation, effacement complet (D33).
+- [ ] Entrée cron (ou launchd) documentée : sauvegarde, compactage et rotation chaque jour.
+- [ ] `SKILL.md` pour l'API et l'outil (IA locale).
+
 ## Décisions
 
 Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et dans la spec.
@@ -356,6 +440,9 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D28 | Relais exigeant NIP-42 | **Décision de l'utilisateur (28/10/2026)** : la console répond au défi AUTH avec la clé de la connexion (celle de la cellule, ou du groupe), qui est déjà l'auteur de ce qu'elle publie et le destinataire de ce qu'elle lit sur cette connexion, sur son propre circuit Tor : l'authentification ne révèle rien de plus au relais. Après acceptation : abonnement renvoyé, publications refusées pour `auth-required:` renvoyées une fois. Un refus après authentification (liste blanche) est définitif, sans boucle ; un AUTH refusé abandonne le relais | ✅ |
 | D29 | DM lus après redémarrage | **Accord de l'utilisateur (28/10/2026)** : les identifiants des messages privés lus (UUID aléatoires, sans contenu ni clé) sont gardés dans `console.sqlite` (table `dm_read`), 30 jours ; relus après un redémarrage, ils restent lus et ne reçoivent pas un second accusé | ✅ |
 | D30 | La carte suit la console | **Choix de l'utilisateur (28/10/2026)** : nouvelle fonction dans bitchat-geohash (lot 19, 0.2.0, `POST /api/area`), zone de la carte = parent de la cellule de la console (`u09tv` → `u09t`, jamais moins de 2 caractères). C'est l'overlay, dans la page de la carte, qui la demande quand le centre de la console change ; la carte peut aussi changer de zone par son propre champ, la console ne la suit pas dans ce sens | ✅ |
+| D31 | Historique sur disque (remplace D11 et la règle « messages en mémoire seulement » de D16) | **Approuvée par l'utilisateur (28/10/2026)** : tous les messages (canal, DM, groupes, reçus et émis, masqués compris) dans `history.sqlite`, fichier à part de `console.sqlite` (pas de clés de groupe à côté), actif par défaut, `0600` ; traitements par un outil externe et une IA locale | ✅ |
+| D32 | Pseudo | **Choix de l'utilisateur (28/10/2026)** : un seul pseudo pour toutes les cellules, gardé par la console ; par cellule, possibilité de ne pas l'envoyer (l'app affiche alors `anon#xxxx`) | ✅ |
+| D33 | Sauvegarde et rotation | **Demande de l'utilisateur (28/10/2026)** : par cron, chaque jour, sauvegarde et compactage, puis rotation sur une base neuve qui commence 2 h avant ; suppression d'enregistrements et effacement complet possibles, base alors recréée. Rotation sans échange de fichier sous la console (proposition de l'agent, **validée le 28/10/2026**) : `VACUUM INTO` vers l'archive datée, suppression de ce qui a plus de 2 h, `VACUUM` | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -404,3 +491,6 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 9 | Demande de l'utilisateur : double-clic (ou ctrl-clic, cmd-clic ; sur Mac le ctrl-clic est un menu contextuel, capté aussi) sur une des 9 cellules de la console → la carte surveille la zone de cette cellule (son parent), la console garde son centre ; la carte ne suit plus que les changements de centre de la console, pas sa sélection. Vérifié dans Chrome headless (double-clic `u09wj` → `u09w`, clic simple sans effet sur la zone, ctrl-clic `u09ty` → `u09t`). |
 | 28/10/2026 | 9 | Bug signalé : le sélecteur de niveau de la carte ne suivait pas la sélection. L'overlay règle le niveau de la carte sur celui de la cellule de la console (`#level=`), et la carte affiche les subdivisions après un changement de zone (bitchat-geohash 0.2.1, qui rend aussi le changement de zone 0,5 s au lieu de 8 à 10 s). Vérifié dans Chrome headless : niveau 4 mis à la main → 5 au clic d'une cellule ; double-clic `u09wj` → `u09w` en 0,5 s, niveau 5. |
 | 28/10/2026 | 7 | Demande de l'utilisateur : mettre en sourdine les zones adjacentes. Option d'affichage « mute the 8 neighbours » (le fil ne montre que le centre, voisines estompées, la carte n'encadre que le centre) ; les voisines restent suivies (compteurs, DM, clic). Vérifié dans Chrome headless avec deux consoles sur le relais de l'utilisateur. |
+| 28/10/2026 | 13–17 | Analyse d'[EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) : lots 13 à 17. Décisions de l'utilisateur : D31 (historique `history.sqlite`, actif par défaut, masqués et groupes compris), D32 (même pseudo partout, envoi au choix par cellule), D33 (cron : sauvegarde, compactage, rotation à −2 h, purge, effacement). Vérifié dans l'app : une clé de cellule vaut `HMAC(graine, geohash)`, stable tant que l'utilisateur ne fait pas d'effacement d'urgence ; IA locale, donc pas de masquage des clés. |
+| 28/10/2026 | 13, 15 | D33 validée ; pas de pseudo envoyé = pas de tag `n` (validé) ; la console qui change de cellule ne quitte pas ses échanges. Écart signalé par l'utilisateur sur `anon` et le pseudo des DM : l'app garde le dernier pseudo vu par clé (cache mémoire, vidé au changement de canal), d'où un pseudo encore affiché après qu'il n'est plus envoyé, et dans les DM. |
+| 28/10/2026 | 13 | Lot 13 : champs qui gardent leur défilement, champs de message en `textarea` qui grandit (Entrée envoie, Maj+Entrée va à la ligne) ; pseudo dans `console.sqlite` (repris une fois du navigateur), case par cellule pour ne pas l'envoyer (D32), pseudo du moment pour les préenregistrés, planifiés et groupes. 2 tests Rust ajoutés (base, envoi et redémarrage), routes testées ; 14 tests `node`. Chrome headless sur le binaire réel (`u09tv` téléporté, démon Tor, graine jetable, rien envoyé) : 12 vérifications, dont un défaut trouvé et corrigé (le champ du pseudo gardait l'ancienne valeur à la reconstruction ; un champ qui montre l'état de la console ne garde que ce que l'on tape). |

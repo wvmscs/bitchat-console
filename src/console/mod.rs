@@ -218,12 +218,15 @@ pub struct DirectMessage {
     pub read: bool,
 }
 
-/// What the user keeps locally: muted keys, saved and scheduled messages.
+/// What the user keeps locally: muted keys, saved and scheduled messages,
+/// their nickname and the cells where it is not sent (D32).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Local {
     pub mutes: Vec<String>,
     pub presets: Vec<Preset>,
     pub schedules: Vec<Schedule>,
+    pub nickname: Option<String>,
+    pub anon_cells: Vec<String>,
 }
 
 /// Private messages kept in memory.
@@ -278,6 +281,8 @@ enum Command {
     MarkRead(String, oneshot::Sender<usize>),
     Mute(String, bool, oneshot::Sender<Result<()>>),
     Local(oneshot::Sender<Result<Local>>),
+    SetNickname(Option<String>, oneshot::Sender<Result<()>>),
+    SetAnon(String, bool, oneshot::Sender<Result<()>>),
     AddPreset(Preset, oneshot::Sender<Result<i64>>),
     DeletePreset(i64, oneshot::Sender<Result<bool>>),
     AddSchedule(Schedule, oneshot::Sender<Result<i64>>),
@@ -370,7 +375,8 @@ impl Console {
     }
 
     /// Sends a message to a followed cell (the centre by default), signed
-    /// with the key of that cell, mined like iOS. Returns it as the feed
+    /// with the key of that cell, mined like iOS. `nickname`: this one
+    /// instead of the user's; none in a cell where it is not sent (D32). Returns it as the feed
     /// shows it; the relays that accept it are added as they answer.
     pub async fn send(
         &self,
@@ -387,11 +393,9 @@ impl Console {
         if !status.cells.iter().any(|c| c.geohash == cell) {
             return Err(Error::NotInArea(cell));
         }
-        let (seed, text, nickname) = (
-            self.seed.clone(),
-            text.to_owned(),
-            nickname.map(str::to_owned),
-        );
+        let local = self.local().await?;
+        let nickname = nickname_for(nickname, local.nickname, local.anon_cells.contains(&cell));
+        let (seed, text) = (self.seed.clone(), text.to_owned());
         let (teleport, bits) = (status.teleport, status.pow_bits);
         let event = tokio::task::spawn_blocking(move || {
             build_message(&seed, &cell, &text, nickname.as_deref(), teleport, bits)
@@ -440,9 +444,29 @@ impl Console {
         self.ask(|r| Command::Mute(p, muted, r)).await?
     }
 
-    /// Muted keys, saved and scheduled messages.
+    /// Muted keys, saved and scheduled messages, nickname.
     pub async fn local(&self) -> Result<Local> {
         self.ask(Command::Local).await?
+    }
+
+    /// The user's nickname, for every cell (D32); empty or `None` removes it.
+    pub async fn set_nickname(&self, nickname: Option<&str>) -> Result<()> {
+        let n = nickname.map(|n| n.trim().to_owned());
+        self.ask(|r| Command::SetNickname(n, r)).await?
+    }
+
+    /// Whether the nickname is sent in `cell` (D32). Messages already sent
+    /// there keep it, and so does the app for that key until it changes
+    /// channel: the key of a cell does not change.
+    pub async fn set_anon(&self, cell: &str, anon: bool) -> Result<()> {
+        let c = cell.trim().to_lowercase();
+        if !CHANNEL_LEVELS.contains(&c.len()) {
+            return Err(Error::NotAChannel(c));
+        }
+        if geohash_relays::geohash::with_neighbours(&c).is_err() {
+            return Err(Error::InvalidGeohash(c));
+        }
+        self.ask(|r| Command::SetAnon(c, anon, r)).await?
     }
 
     /// Saves a message to send later on demand. Returns its id.
@@ -471,7 +495,8 @@ impl Console {
     }
 
     /// Sends a saved message, in `cell` if given, else in its own cell, else
-    /// in the centre.
+    /// in the centre; with its own nickname if it has one, else the user's
+    /// as it is now.
     pub async fn send_preset(&self, id: i64, cell: Option<&str>) -> Result<Message> {
         let p = self
             .local()
@@ -522,8 +547,12 @@ impl Console {
         self.ask(Command::Groups).await
     }
 
-    /// Runs a group operation (create, invite, accept, send…).
-    pub async fn group(&self, op: groups::GroupOp) -> Result<()> {
+    /// Runs a group operation (create, invite, accept, send…). Without a
+    /// nickname, the user's.
+    pub async fn group(&self, mut op: groups::GroupOp) -> Result<()> {
+        if let Some(n) = op.nickname_mut().filter(|n| n.trim().is_empty()) {
+            *n = self.local().await?.nickname.unwrap_or_default();
+        }
         self.ask(|r| Command::Group(op, r)).await?
     }
 
@@ -553,6 +582,19 @@ impl Console {
         let _ = self.tx.send(Command::Shutdown);
         let _ = self.task.await;
     }
+}
+
+/// The nickname of a message (D32): none in a cell where it is not sent,
+/// else the one given, else the user's.
+fn nickname_for(given: Option<&str>, mine: Option<String>, anon: bool) -> Option<String> {
+    if anon {
+        return None;
+    }
+    given
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_owned)
+        .or(mine)
 }
 
 /// A channel message as the app writes it: tags `g`, `n`, `t=teleport`,
@@ -718,6 +760,16 @@ impl State {
             }
             Command::Local(reply) => {
                 let _ = reply.send(self.local());
+            }
+            Command::SetNickname(n, reply) => {
+                let r = self.db.set_nickname(n.as_deref());
+                self.local_changed();
+                let _ = reply.send(r);
+            }
+            Command::SetAnon(cell, anon, reply) => {
+                let r = self.db.set_anon(&cell, anon, unix_now());
+                self.local_changed();
+                let _ = reply.send(r);
             }
             Command::AddPreset(p, reply) => {
                 let r =
@@ -1158,6 +1210,8 @@ impl State {
             mutes: self.db.mutes()?,
             presets: self.db.presets()?,
             schedules: self.db.schedules()?,
+            nickname: self.db.nickname()?,
+            anon_cells: self.db.anon_cells()?,
         })
     }
 
@@ -1202,11 +1256,16 @@ impl State {
         if !self.cells.contains(&cell) {
             return Err(Error::NotInArea(cell));
         }
+        let nickname = nickname_for(
+            s.nickname.as_deref(),
+            self.db.nickname()?,
+            self.db.is_anon(&cell)?,
+        );
         build_message(
             &self.config.seed,
             &cell,
             &s.text,
-            s.nickname.as_deref(),
+            nickname.as_deref(),
             self.teleport,
             self.config.pow_bits,
         )

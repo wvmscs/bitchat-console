@@ -121,3 +121,71 @@ async fn saved_and_scheduled_messages() {
     c.shutdown().await;
     let _ = std::fs::remove_file(db);
 }
+
+/// The `n` tag of an event, if any.
+fn nick(e: &bitchat_console::nostr::Event) -> Option<&str> {
+    e.tags
+        .iter()
+        .find(|t| t.first().is_some_and(|k| k == "n"))
+        .and_then(|t| t.get(1))
+        .map(String::as_str)
+}
+
+#[tokio::test]
+async fn one_nickname_not_sent_where_chosen() {
+    let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
+    let db = db_file("nickname");
+    let c = console_with_db(&relay, &db);
+    c.set_area("u09tv", true).await.unwrap();
+    status_until(&c, "connected", all_connected).await;
+    let mut seen = reader(&relay.url(), json!({"kinds": [20000]})).await;
+
+    // The console's nickname by default, another one if given.
+    c.set_nickname(Some(" bob ")).await.unwrap();
+    c.send("a", None, None).await.unwrap();
+    assert_eq!(nick(&next(&mut seen).await), Some("bob"));
+    c.send("b", None, Some("carol")).await.unwrap();
+    assert_eq!(nick(&next(&mut seen).await), Some("carol"));
+
+    // Not sent in a cell the user chose, whatever is given; still sent in
+    // the others.
+    c.set_anon("u09tv", true).await.unwrap();
+    c.send("c", None, Some("carol")).await.unwrap();
+    assert_eq!(nick(&next(&mut seen).await), None);
+    c.send("d", Some("u09ty"), None).await.unwrap();
+    assert_eq!(nick(&next(&mut seen).await), Some("bob"));
+
+    // A saved message without a nickname takes the one of the moment.
+    let p = c.add_preset("p", "e", None, None).await.unwrap();
+    c.set_nickname(Some("dave")).await.unwrap();
+    c.send_preset(p, Some("u09ty")).await.unwrap();
+    assert_eq!(nick(&next(&mut seen).await), Some("dave"));
+    // Scheduled ones too, and not in a cell where it is not sent.
+    c.add_schedule("f", None, None, unix_now(), None)
+        .await
+        .unwrap();
+    let e = next(&mut seen).await;
+    assert_eq!((e.content.as_str(), nick(&e)), ("f", None));
+
+    assert!(matches!(
+        c.set_anon("u09", true).await,
+        Err(Error::NotAChannel(_))
+    ));
+    assert!(matches!(
+        c.set_anon("u09a", true).await,
+        Err(Error::InvalidGeohash(_))
+    ));
+    c.shutdown().await;
+
+    // Kept across a restart.
+    let c = console_with_db(&relay, &db);
+    let local = c.local().await.unwrap();
+    assert_eq!(
+        (local.nickname.as_deref(), local.anon_cells.as_slice()),
+        (Some("dave"), &["u09tv".to_owned()][..])
+    );
+    c.set_nickname(None).await.unwrap();
+    assert_eq!(c.local().await.unwrap().nickname, None);
+    c.shutdown().await;
+    let _ = std::fs::remove_file(db);
+}

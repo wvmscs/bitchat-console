@@ -110,6 +110,8 @@ fn console_routes(prefix: &str) -> Router<api::AppState> {
         .route(&p("/api/dm"), post(api::dm))
         .route(&p("/api/read"), post(api::read))
         .route(&p("/api/mute"), post(api::mute))
+        .route(&p("/api/nickname"), post(api::nickname))
+        .route(&p("/api/anon"), post(api::anon))
         .route(&p("/api/preset"), post(api::add_preset))
         .route(&p("/api/preset/delete"), post(api::delete_preset))
         .route(&p("/api/preset/send"), post(api::send_preset))

@@ -24,7 +24,7 @@ const state = {
   convo: null,          // open conversation key "peer|cell"
   link: "connecting",
   texts: [],            // last relay texts (NOTICE, CLOSED, refusals)
-  local: { mutes: [], presets: [], schedules: [] },
+  local: { mutes: [], presets: [], schedules: [], nickname: null, anon_cells: [] },
   isolate: null,        // key shown alone in the feed (isolation window)
   groups: { groups: [], messages: [], invitations: [] },
   group: null,          // open group id
@@ -39,6 +39,36 @@ const currentCell = () => state.selected || (state.status && state.status.center
 
 const saved = key => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
 const save = (key, v) => { try { localStorage.setItem(key, v); } catch { /* private window */ } };
+
+// The nickname is kept by the console, for every cell (D32), and not sent in
+// the cells the user chose.
+const myNickname = () => state.local.nickname || "";
+const isAnon = cell => state.local.anon_cells.includes(cell);
+
+// Pages before lot 13 kept the nickname in the browser, per origin (lost when
+// the port changes): handed over to the console once.
+function handOverNickname() {
+  const old = saved("nickname");
+  if (!old) return;
+  const drop = () => { try { localStorage.removeItem("nickname"); } catch { /* private window */ } };
+  if (state.local.nickname) { drop(); return; }
+  command("api/nickname", { nickname: old }).then(({ ok }) => { if (ok) drop(); });
+}
+
+// A message field: grows with its text (a few lines at most, then scrolls),
+// Enter sends, Shift+Enter goes to the next line.
+const grow = f => { f.style.height = "auto"; f.style.height = f.scrollHeight + 2 + "px"; };
+function messageField(key, placeholder, go) {
+  const f = field("textarea", key, "text");
+  f.rows = 1;
+  f.placeholder = placeholder;
+  f.addEventListener("input", () => grow(f));
+  f.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); go(); }
+  });
+  return f;
+}
+const clear = f => { f.value = ""; if (f.tagName === "TEXTAREA") grow(f); };
 
 // Paths are relative: the page is served at `/`, or at `/console/` over the
 // map of bitchat-geohash (lot 9).
@@ -84,6 +114,9 @@ function keep(id, draw) {
   // Inputs keep their value, messages beside them their text.
   const valueOf = f => ("value" in f ? f.value : f.textContent);
   for (const f of box.querySelectorAll("[data-keep]")) values.set(f.dataset.keep, valueOf(f));
+  // Where each field had scrolled to: a long text keeps its end in view.
+  const fieldScrolls = new Map([...box.querySelectorAll("input[data-keep], textarea[data-keep]")]
+    .map(f => [f.dataset.keep, { left: f.scrollLeft, top: f.scrollTop }]));
   const a = document.activeElement;
   const focus = a && box.contains(a) && a.dataset.keep
     ? { key: a.dataset.keep, start: a.selectionStart, end: a.selectionEnd } : null;
@@ -100,9 +133,13 @@ function keep(id, draw) {
   }
   for (const f of box.querySelectorAll("[data-keep]")) {
     if (!values.has(f.dataset.keep)) continue;
+    // A field showing the console's state (the nickname) keeps what the
+    // user is typing only.
+    if (f.dataset.state !== undefined && !(focus && focus.key === f.dataset.keep)) continue;
     const v = values.get(f.dataset.keep);
     if (f.tagName === "SELECT" && ![...f.options].some(o => o.value === v)) continue;
     if ("value" in f) f.value = v; else f.textContent = v;
+    if (f.tagName === "TEXTAREA") grow(f);
   }
   if (focus) {
     const f = box.querySelector(`[data-keep="${CSS.escape(focus.key)}"]`);
@@ -110,6 +147,10 @@ function keep(id, draw) {
       f.focus({ preventScroll: true });
       try { if (focus.start !== null) f.setSelectionRange(focus.start, focus.end); } catch { /* not text */ }
     }
+  }
+  for (const f of box.querySelectorAll("input[data-keep], textarea[data-keep]")) {
+    const was = fieldScrolls.get(f.dataset.keep);
+    if (was) { f.scrollLeft = was.left; f.scrollTop = was.top; }
   }
   if (id !== "feed") box.scrollTop = top;
 }
@@ -378,7 +419,8 @@ function drawPeople(s) {
   const names = nicknames(state.messages);
   const box = el("div", "people");
   if (me) {
-    const you = el("div", "you small", "you: " + author(saved("nickname"), me));
+    const you = el("div", "you small", "you: " + author(isAnon(cell) ? "anon" : myNickname(), me)
+      + (isAnon(cell) ? " (nickname not sent here)" : ""));
     you.title = me;
     box.append(you);
   }
@@ -477,28 +519,39 @@ function composer() {
   }
   const cells = s.cells.map(c => c.geohash);
   cell.value = cells.includes(state.writeCell) ? state.writeCell : state.selected || s.center;
-  cell.addEventListener("change", () => { state.writeCell = cell.value; });
   const nick = field("input", "nickname");
   nick.placeholder = "nickname";
-  nick.value = saved("nickname");
-  nick.addEventListener("change", () => save("nickname", nick.value.trim()));
-  const text = field("input", "feed-text", "text");
-  text.placeholder = "message";
+  nick.title = "your nickname, the same in every cell";
+  nick.value = myNickname();
+  nick.dataset.state = "";
+  nick.addEventListener("change", () => command("api/nickname", { nickname: nick.value.trim() || null }));
+  // Per cell: send the nickname or not (D32).
+  const sendNick = el("input");
+  sendNick.type = "checkbox";
+  const sendNickLabel = el("label", "small");
+  sendNickLabel.title = "Off: no nickname, the app shows anon#…. The app, and relays that keep "
+    + "events, still know a nickname already sent with this cell's key (it does not change).";
+  const showNick = () => {
+    sendNick.checked = !isAnon(cell.value);
+    sendNickLabel.lastChild.textContent = ` nickname in #${cell.value}`;
+  };
+  sendNickLabel.append(sendNick, document.createTextNode(""));
+  sendNick.addEventListener("change", () => command("api/anon", { cell: cell.value, anon: !sendNick.checked }));
+  cell.addEventListener("change", () => { state.writeCell = cell.value; showNick(); });
+  showNick();
+  const text = messageField("feed-text", "message", () => go());
   const send = el("button", null, "Send");
   const result = field("span", "feed-result", "warn small");
   const go = async () => {
     const value = live(text).value;
     if (!value.trim()) return;
     send.disabled = true;
-    const { ok, data } = await command("api/send", {
-      text: value, cell: cell.value, nickname: live(nick).value.trim() || null,
-    });
+    const { ok, data } = await command("api/send", { text: value, cell: cell.value });
     send.disabled = false;
-    if (ok) live(text).value = ""; else live(result).textContent = (data && data.message) || "refused";
+    if (ok) clear(live(text)); else live(result).textContent = (data && data.message) || "refused";
   };
   send.addEventListener("click", go);
-  text.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
-  form.append(cell, nick, text, send, result);
+  form.append(cell, nick, sendNickLabel, text, send, result);
   return form;
 }
 
@@ -563,18 +616,16 @@ function drawDms(box) {
     row.append(pick, inv);
     box.append(row);
   }
-  const text = field("input", "dm-text|" + state.convo, "text");
-  text.placeholder = "private message (255 bytes at most)";
+  const text = messageField("dm-text|" + state.convo, "private message (255 bytes at most)", () => go());
   const send = el("button", null, "Send");
   const result = field("span", "dm-result|" + state.convo, "warn small");
   const go = async () => {
     const value = live(text).value;
     if (!value.trim()) return;
     const { ok, data } = await command("api/dm", { peer, cell, text: value });
-    if (ok) live(text).value = ""; else live(result).textContent = (data && data.message) || "refused";
+    if (ok) clear(live(text)); else live(result).textContent = (data && data.message) || "refused";
   };
   send.addEventListener("click", go);
-  text.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
   const form = el("div", "composer");
   form.append(text, send, result);
   box.append(form);
@@ -599,7 +650,7 @@ function drawGroups(box) {
   for (const inv of v.invitations) {
     const row = el("div", "row invitation");
     const yes = el("button", null, "accept");
-    yes.addEventListener("click", () => groupOp({ op: "accept", group: inv.group, nickname: saved("nickname") }));
+    yes.addEventListener("click", () => groupOp({ op: "accept", group: inv.group }));
     const no = el("button", null, "decline");
     no.addEventListener("click", () => groupOp({ op: "decline", group: inv.group }));
     row.append(el("span", null, `${inv.from || "#" + inv.peer.slice(-4)} invites you to “${inv.name}” `), yes, no);
@@ -633,17 +684,15 @@ function drawGroups(box) {
       row.append(el("b", null, m.nickname || "?"), el("span", "muted small", " " + clock(m.created_at)), body);
       thread.push(row);
     }
-    const text = field("input", "group-text|" + g.id, "text");
-    text.placeholder = "message to the group";
+    const text = messageField("group-text|" + g.id, "message to the group", () => go());
     const send = el("button", null, "Send");
     const go = async () => {
       const value = live(text).value;
       if (!value.trim()) return;
-      const { ok } = await groupOp({ op: "send", group: g.id, text: value, nickname: saved("nickname") });
-      if (ok) live(text).value = "";
+      const { ok } = await groupOp({ op: "send", group: g.id, text: value });
+      if (ok) clear(live(text));
     };
     send.addEventListener("click", go);
-    text.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
     const form = el("div", "composer");
     form.append(text, send);
     const end = el("button", null, g.creator_is_me ? "destroy the group" : "leave the group");
@@ -661,7 +710,7 @@ function drawGroups(box) {
   create.addEventListener("click", async () => {
     const value = live(name).value;
     if (!value.trim()) return;
-    const { ok } = await groupOp({ op: "create", name: value, nickname: saved("nickname") });
+    const { ok } = await groupOp({ op: "create", name: value });
     if (ok) live(name).value = "";
   });
   const form = el("div", "composer");
@@ -691,14 +740,13 @@ function drawSaved(box) {
   }
   const name = field("input", "preset-name");
   name.placeholder = "name";
-  const text = field("input", "preset-text", "text");
-  text.placeholder = "text to keep";
+  const text = messageField("preset-text", "text to keep", () => add.click());
   const add = el("button", null, "Save");
   add.addEventListener("click", async () => {
     const [n, t] = [live(name), live(text)];
     if (!t.value.trim()) return;
-    const { ok } = await command("api/preset", { name: n.value, text: t.value, nickname: saved("nickname") || null });
-    if (ok) { live(name).value = ""; live(text).value = ""; }
+    const { ok } = await command("api/preset", { name: n.value, text: t.value });
+    if (ok) { live(name).value = ""; clear(live(text)); }
   });
   const form = el("div", "composer");
   form.append(name, text, add);
@@ -716,8 +764,7 @@ function drawSaved(box) {
         + (sc.last_result ? ` · last: ${sc.last_result}` : "") + " "), del);
     box.append(row);
   }
-  const stext = field("input", "schedule-text", "text");
-  stext.placeholder = "message to send later";
+  const stext = messageField("schedule-text", "message to send later", () => plan.click());
   const at = field("input", "schedule-at");
   at.type = "datetime-local";
   const repeat = field("select", "schedule-repeat");
@@ -735,9 +782,9 @@ function drawSaved(box) {
     const rep = live(repeat).value;
     const { ok, data } = await command("api/schedule", {
       text: t.value, at: when, repeat_secs: rep ? Number(rep) : null,
-      cell: state.selected, nickname: saved("nickname") || null,
+      cell: state.selected,
     });
-    if (ok) { live(stext).value = ""; live(result).textContent = ""; }
+    if (ok) { clear(live(stext)); live(result).textContent = ""; }
     else live(result).textContent = (data && data.message) || "refused";
   });
   const sform = el("div", "composer");
@@ -787,6 +834,7 @@ function onState(d) {
   state.dms = d.dms;
   state.local = d.local;
   state.groups = d.groups;
+  handOverNickname();
   render();
   refreshPeople();
 }

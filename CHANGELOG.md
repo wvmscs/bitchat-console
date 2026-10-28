@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Page: a field no longer jumps back to its start when a live event rebuilds its section: fields keep their scroll (the text typed at the end of a long line went out of view).
 - Over the map: the map's level follows the console's cell (its `#level=`), so the level chooser no longer stays on another level after a selection or an area change.
 - Over the map: the outline of the console's cells no longer takes the map's hovers and clicks. It was drawn on its own SVG over the map's, which caught the pointer even where it drew nothing; it now has its own pane, deaf to the pointer.
 - Page: a geohash typed in the top bar is no longer replaced by the current centre between pressing and releasing "Follow" (a live update came in between and the console followed the same cell again). The counts of a cell say what they count.
@@ -13,6 +14,9 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- Nickname kept by the console (`console.sqlite`, migration `0004_nickname`), the same in every cell (D32), instead of the browser's storage, which belongs to the page's origin and was lost when the port changed. The one an older page kept in the browser is taken over once. `POST /api/nickname`, `Local.nickname`. Saved and scheduled messages, and group operations, use the nickname of the moment.
+- Per cell, "nickname in #…": off, messages there carry no `n` tag (the app shows `anon#…`, unless it already knows a nickname for that key: the key of a cell does not change). `POST /api/anon`, `Local.anon_cells`.
+- Page: message fields (channel, private, group, saved, scheduled) grow with the text, up to about 8 lines; Enter sends, Shift+Enter starts a new line.
 - Page: "mute the 8 neighbours" under the grid: the feed shows the centre's messages only, the neighbours are dimmed, the map outlines the centre; the neighbours are still followed (counts, private messages) and a click on one still shows its messages. Kept in the browser.
 - Over the map: a double-click (or ctrl-click, or cmd-click) on one of the console's 9 cells makes the map watch the area of that cell (its parent), without moving the console; a single click still outlines and frames. The map follows the console's centre when it moves, not its selection.
 - Over the map: when the console's cell changes, the map watches the area around it (its parent, `u09tv` → `u09t`) with all its functions, through `POST /api/area` of bitchat-geohash 0.2.0 (D30); then the console's cells are framed again. The panel's title says when the map moves, or why it could not (an older map answers 404).

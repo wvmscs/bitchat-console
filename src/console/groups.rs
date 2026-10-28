@@ -74,6 +74,18 @@ pub enum GroupOp {
     },
 }
 
+impl GroupOp {
+    /// The nickname the operation carries, for those that carry one.
+    pub(crate) fn nickname_mut(&mut self) -> Option<&mut String> {
+        match self {
+            GroupOp::Create { nickname, .. }
+            | GroupOp::Accept { nickname, .. }
+            | GroupOp::Send { nickname, .. } => Some(nickname),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MemberView {
     pub fingerprint: String,
