@@ -4,9 +4,12 @@
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
 //!       [--android-csv <url|path> | --no-android] [--apps both|ios|android]
-//!       [--dm-relays <url,url>]
+//!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
+//!
+//! Every message is kept in `<data-dir>/history.sqlite` (D31), unless
+//! `--no-history`.
 //!
 //! With `--map`, a running bitchat-geohash map is served at `/` with the
 //! console floating over it (lot 9).
@@ -27,7 +30,7 @@ use geohash_relays::{AppStrategy, Apps, Platform};
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
      [--android-csv <url|path> | --no-android] [--apps both|ios|android] \
-     [--dm-relays <url,url>] [--no-presence] \
+     [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
 
@@ -50,6 +53,8 @@ struct Args {
     /// Relays of private messages; `None`: the apps' defaults.
     dm_relays: Option<Vec<String>>,
     presence: bool,
+    /// Keep every message in `history.sqlite` (D31).
+    history: bool,
     pow_bits: u32,
     server: ServerConfig,
     open: bool,
@@ -84,6 +89,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         apps: Apps::Both,
         dm_relays: None,
         presence: true,
+        history: true,
         pow_bits: bitchat_console::pow::TARGET_BITS,
         server: ServerConfig::default(),
         open: false,
@@ -132,6 +138,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                 )
             }
             "--no-presence" => a.presence = false,
+            "--no-history" => a.history = false,
             "--pow-bits" => {
                 let v = value()?;
                 a.pow_bits = v
@@ -264,6 +271,13 @@ async fn main() {
         fail(&format!("local storage {}", db_path.display()), e);
     }
     config.db_path = Some(db_path);
+    if args.history {
+        let path = args.data_dir.join(bitchat_console::history::HISTORY_FILE);
+        if let Err(e) = bitchat_console::history::History::open(&path) {
+            fail(&format!("history {}", path.display()), e);
+        }
+        config.history_path = Some(path);
+    }
     if let Some(dm) = args.dm_relays.clone() {
         config.dm_relays = dm;
     }
@@ -308,11 +322,12 @@ mod tests {
         let a = parse(
             "u09tv --teleport --data-dir /tmp/x --tor-socks 127.0.0.1:9150 --relays-csv own.csv \
              --no-android --apps ios --no-presence --pow-bits 12 --listen 127.0.0.1:9000 --open \
-             --dm-relays wss://a,wss://b",
+             --dm-relays wss://a,wss://b --no-history",
         )
         .unwrap();
         assert_eq!(a.geohash, "u09tv");
-        assert!(a.teleport && !a.presence && a.open);
+        assert!(a.teleport && !a.presence && a.open && !a.history);
+        assert!(parse("u09tv").unwrap().history);
         assert_eq!(a.tor, Tor::Socks("127.0.0.1:9150".parse().unwrap()));
         assert_eq!(a.ios, ListSource::Path("own.csv".into()));
         assert!(a.android.is_none());

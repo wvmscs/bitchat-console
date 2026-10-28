@@ -20,7 +20,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 11 | Feature `arti` | ✅ |
 | 12 | Validation réelle | ⏳ (avec l'utilisateur) |
 | 13 | Zones de saisie (défilement), pseudo côté serveur, envoi du pseudo par cellule (D32) | ✅ |
-| 14 | Base d'historique `history.sqlite` (D31) : schéma, écriture, droits, recréation | ☐ |
+| 14 | Base d'historique `history.sqlite` (D31) : schéma, écriture, droits, recréation | ✅ |
 | 15 | Critère de départ (10 min) : messages grisés, DM cachés, effacement des DM | ☐ |
 | 16 | Onglet d'historique : recherche, tri, sélection, effacement ; modifications externes en direct | ☐ |
 | 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ☐ |
@@ -374,21 +374,31 @@ Demandé dans [EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) (28/10/2026).
       le pseudo vu dans les DM est celui d'un message de canal antérieur.
       Les groupes le portent déjà.
 
-### Lot 14 : base d'historique ☐
+### Lot 14 : base d'historique ✅
 
-- [ ] `history.sqlite`, à part de `console.sqlite` (D31) : active par défaut ; messages de
-      canal, DM et groupes, reçus et émis, y compris ceux des masqués.
-- [ ] Schéma : type (canal, DM, groupe), sens, geohash, horodatages (événement, réception),
-      émetteur, destinataire, pseudo, téléporté, contenu, ID de l'événement (dédoublonnage
-      entre relais), ID BitChat du DM, état délivré ou lu, marque d'effacement.
-- [ ] Fichier, `-wal` et `-shm` en `0600`, dossier en `0700` ; mode WAL, `busy_timeout`
-      (un outil externe écrit en même temps).
-- [ ] Base détruite (effacement complet par le cron) : recréée vide par la console, même en
-      marche (le fichier est surveillé).
-- [ ] DM effacés : leur ID gardé (comme `dm_read`, D29), sinon les relais les renvoient au
-      prochain lancement.
-- [ ] Relecture de la base quand une cellule est de nouveau sélectionnée.
-- [ ] `AGENTS.md` : la règle « rien sur disque » renvoie à D31.
+- [x] `history.sqlite`, à part de `console.sqlite` (D31) : active par défaut
+      (`--no-history` pour rien garder) ; messages de canal, DM et groupes, reçus et émis, y
+      compris ceux des masqués. Module `history`, `ConsoleConfig::history_path`.
+- [x] Schéma (`migrations/history/0001_history.sql`, table `message`) : type (`channel`,
+      `dm`, `group`), sens (`own`), geohash, groupe, horodatages (événement, réception),
+      émetteur, destinataire (DM), pseudo, téléporté, contenu, ID (événement Nostr, ID
+      BitChat du DM ou du message de groupe : une fois par message, quel que soit le nombre
+      de relais), état du DM (envoyé, relayé, délivré, lu), `deleted_at`. Table `meta` :
+      `since`, début de la base.
+- [x] Fichier, `-wal` et `-shm` en `0600` (créé en `0600` avant l'ouverture : SQLite donne
+      ce mode aux deux autres), dossier de données déjà en `0700` ; mode WAL, attente de
+      60 s sur un verrou d'un autre processus, écritures sur un fil à part (la console
+      n'attend jamais).
+- [x] Base détruite (effacement complet par le cron) : recréée vide en 2 s au plus, même en
+      marche (fichier surveillé par son inode) ; restes `-wal` et `-shm` d'une base effacée
+      supprimés avant (ils seraient rejoués dans la nouvelle).
+- [x] Rien d'antérieur au début de la base (`since`) n'est écrit, et une ligne effacée
+      (contenu `NULL`, `deleted_at`) reste : un relais qui renvoie un message après une
+      purge, une rotation (D33) ou un effacement ne le fait pas revenir. Le masquage en
+      mémoire des DM effacés par l'utilisateur va au lot 15.
+- [x] Relecture : quand la console suit une zone, les messages des 24 dernières heures de
+      ses 9 cellules reviennent de la base dans le fil (effacés exclus).
+- [x] `AGENTS.md` : la règle « rien sur disque » renvoie à D31.
 
 ### Lot 15 : départ des intervenants ☐
 
@@ -494,3 +504,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 13–17 | Analyse d'[EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) : lots 13 à 17. Décisions de l'utilisateur : D31 (historique `history.sqlite`, actif par défaut, masqués et groupes compris), D32 (même pseudo partout, envoi au choix par cellule), D33 (cron : sauvegarde, compactage, rotation à −2 h, purge, effacement). Vérifié dans l'app : une clé de cellule vaut `HMAC(graine, geohash)`, stable tant que l'utilisateur ne fait pas d'effacement d'urgence ; IA locale, donc pas de masquage des clés. |
 | 28/10/2026 | 13, 15 | D33 validée ; pas de pseudo envoyé = pas de tag `n` (validé) ; la console qui change de cellule ne quitte pas ses échanges. Écart signalé par l'utilisateur sur `anon` et le pseudo des DM : l'app garde le dernier pseudo vu par clé (cache mémoire, vidé au changement de canal), d'où un pseudo encore affiché après qu'il n'est plus envoyé, et dans les DM. |
 | 28/10/2026 | 13 | Lot 13 : champs qui gardent leur défilement, champs de message en `textarea` qui grandit (Entrée envoie, Maj+Entrée va à la ligne) ; pseudo dans `console.sqlite` (repris une fois du navigateur), case par cellule pour ne pas l'envoyer (D32), pseudo du moment pour les préenregistrés, planifiés et groupes. 2 tests Rust ajoutés (base, envoi et redémarrage), routes testées ; 14 tests `node`. Chrome headless sur le binaire réel (`u09tv` téléporté, démon Tor, graine jetable, rien envoyé) : 12 vérifications, dont un défaut trouvé et corrigé (le champ du pseudo gardait l'ancienne valeur à la reconstruction ; un champ qui montre l'état de la console ne garde que ce que l'on tape). |
+| 28/10/2026 | 14 | Lot 14 : `history.sqlite` (D31), écriture sur un fil à part, WAL, `0600` pour la base, le WAL et la mémoire partagée, recréation en marche, `since` contre le retour de messages purgés, relecture des 24 h dans le fil, `--no-history`. 3 tests (`tests/history.rs` : tout est gardé, masqués compris, DM et états ; effacement en marche ; retour dans le fil, effacés et trop anciens) et groupes dans `tests/groups.rs` ; 68 tests Rust, 14 `node` ; clippy propre avec et sans `arti`. Binaire réel par le démon Tor (`u09tv` téléporté, rien envoyé) : fichiers en `0600`, WAL, base recréée 2 s après son effacement. |

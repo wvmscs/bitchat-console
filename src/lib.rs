@@ -12,6 +12,7 @@ pub mod db;
 pub mod envelope;
 mod error;
 pub mod groups;
+pub mod history;
 pub mod identity;
 pub mod lists;
 pub mod nostr;

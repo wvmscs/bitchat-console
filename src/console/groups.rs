@@ -538,6 +538,9 @@ impl State {
     }
 
     fn keep_group_message(&mut self, m: GroupChat) {
+        if let Some(h) = &self.history {
+            h.group(&m);
+        }
         self.group_msgs.push_back(m.clone());
         while self.group_msgs.len() > MAX_GROUP_MESSAGES {
             self.group_msgs.pop_front();

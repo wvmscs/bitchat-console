@@ -14,7 +14,13 @@ use bitchat_console::identity::{NoiseIdentity, Seed};
 use common::*;
 
 fn member(urls: &[String], n: u8) -> Console {
+    member_keeping(urls, n, None)
+}
+
+/// A member keeping a history (D31) in `history`.
+fn member_keeping(urls: &[String], n: u8, history: Option<std::path::PathBuf>) -> Console {
     let mut c = config(urls, Arc::new(Loopback));
+    c.history_path = history;
     c.seed = Arc::new(Seed::from_bytes([n; 32]));
     c.noise = Some(Arc::new(NoiseIdentity::from_bytes(
         [n.wrapping_add(100); 32],
@@ -45,7 +51,18 @@ fn key(n: u8) -> String {
 async fn a_group_lives_and_dies() {
     let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
     let urls = [relay.url()];
-    let (alice, bob, carol) = (member(&urls, 1), member(&urls, 2), member(&urls, 3));
+    let history = std::env::temp_dir().join(format!(
+        "bitchat-console-groups-{}.sqlite",
+        std::process::id()
+    ));
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", history.display()));
+    }
+    let (alice, bob, carol) = (
+        member_keeping(&urls, 1, Some(history.clone())),
+        member(&urls, 2),
+        member(&urls, 3),
+    );
     for c in [&alice, &bob, &carol] {
         c.set_area("u09tv", true).await.unwrap();
         status_until(c, "connected", all_connected).await;
@@ -125,6 +142,25 @@ async fn a_group_lives_and_dies() {
         v.messages.iter().any(|m| m.content == "coucou" && !m.own)
     })
     .await;
+    // Both in alice's history.
+    alice.history().unwrap().flush().await;
+    let kept: Vec<(String, bool, String, String)> = rusqlite::Connection::open(&history)
+        .unwrap()
+        .prepare(
+            "SELECT group_id, own, nickname, content FROM message WHERE kind = 'group' ORDER BY id",
+        )
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        kept,
+        [
+            (gid.clone(), true, "alice".into(), "salut 👋".into()),
+            (gid.clone(), false, "bob".into(), "coucou".into())
+        ]
+    );
 
     // A third member: epoch 3 for everyone.
     alice

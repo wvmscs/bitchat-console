@@ -42,9 +42,12 @@ Run the binary with a wrong option to list them all (`--teleport`, `--tor-socks`
 
 ## Privacy
 
-Received messages, nicknames and keys stay in memory; nothing about other people is written
-to disk or to the logs, except the keys you mute. Your own nickname, and the cells where you
-choose not to send it, are kept in `console.sqlite` (readable by you only). Images in messages are shown as links and
+Every message, received or sent (channels, private messages, groups, muted keys included), is
+kept in `history.sqlite` in the data directory, readable by you only, for reading later and for
+tools of your own (backup, purge, analysis); `--no-history` keeps nothing. Deleted, the file
+comes back empty. Nothing about other people goes to the logs, nor to `console.sqlite`, which
+holds the keys you mute, your saved messages, groups, your nickname and the cells where you
+choose not to send it. Images in messages are shown as links and
 never loaded. With `--map`, the map tiles are loaded by the browser directly, not through Tor.
 
 ## Tests

@@ -28,6 +28,7 @@ use crate::connector::Connector;
 use crate::db::{Db, Preset, Schedule};
 use crate::envelope;
 use crate::error::{Error, Result};
+use crate::history::History;
 use crate::identity::{CellKey, NoiseIdentity, Seed};
 use crate::nostr::{Event, Filter, unix_now};
 use crate::packet::{self, Packet};
@@ -58,6 +59,8 @@ pub struct ConsoleConfig {
     /// Local storage (mutes, saved and scheduled messages); `None`: in
     /// memory, lost at the end.
     pub db_path: Option<std::path::PathBuf>,
+    /// The message history (D31); `None`: none.
+    pub history_path: Option<std::path::PathBuf>,
     /// The console as a BitChat peer, for groups (lot 10).
     pub noise: Option<Arc<NoiseIdentity>>,
     /// How far back a subscription asks (the apps: 1 h).
@@ -85,6 +88,7 @@ impl ConsoleConfig {
             presence_every: (Duration::from_secs(40), Duration::from_secs(80)),
             dm_relays: default_dm_relays(),
             db_path: None,
+            history_path: None,
             noise: None,
             lookback_secs: 3600,
             limit: 200,
@@ -292,6 +296,8 @@ enum Command {
     Messages(String, oneshot::Sender<Vec<Message>>),
     Participants(String, oneshot::Sender<Vec<Participant>>),
     Status(oneshot::Sender<AreaStatus>),
+    /// Messages of the history back in the feed.
+    Restore(Vec<Message>),
     Shutdown,
 }
 
@@ -301,6 +307,8 @@ pub struct Console {
     events: broadcast::Sender<ConsoleEvent>,
     task: JoinHandle<()>,
     seed: Arc<Seed>,
+    history: Option<History>,
+    per_cell: usize,
 }
 
 impl Console {
@@ -313,6 +321,17 @@ impl Console {
             }),
             None => Db::open_in_memory().expect("in-memory SQLite"),
         };
+        let history = config
+            .history_path
+            .as_ref()
+            .and_then(|p| match History::open(p) {
+                Ok(h) => Some(h),
+                Err(e) => {
+                    tracing::error!(error = %e, "history unusable, nothing kept for this run");
+                    None
+                }
+            });
+        let per_cell = config.per_cell;
         let (tx, rx) = mpsc::unbounded_channel();
         let (relay_tx, relay_rx) = mpsc::unbounded_channel();
         let (events, _) = broadcast::channel(1024);
@@ -328,6 +347,7 @@ impl Console {
             invited: Vec::new(),
             closing: Vec::new(),
             db,
+            history: history.clone(),
             store: Box::new(MemoryStore::new(config.per_cell)),
             config,
             center: None,
@@ -353,7 +373,14 @@ impl Console {
             events,
             task,
             seed,
+            history,
+            per_cell,
         }
+    }
+
+    /// The history, if kept (D31).
+    pub fn history(&self) -> Option<&History> {
+        self.history.as_ref()
     }
 
     async fn ask<T>(&self, make: impl FnOnce(oneshot::Sender<T>) -> Command) -> Result<T> {
@@ -369,9 +396,22 @@ impl Console {
     /// messages carry `t=teleport` and it sends no presence, like a
     /// teleported user of the app); chosen at each change of area (D5).
     /// Returns the followed cells, centre first.
+    /// The messages of the last 24 h the history holds for these cells come
+    /// back in the feed (D31).
     pub async fn set_area(&self, geohash: &str, teleport: bool) -> Result<Vec<String>> {
         let g = geohash.trim().to_lowercase();
-        self.ask(|r| Command::SetArea(g, teleport, r)).await?
+        let cells = self.ask(|r| Command::SetArea(g, teleport, r)).await??;
+        if let Some(h) = &self.history {
+            let since = unix_now() - 24 * 3600;
+            let mut back = Vec::new();
+            for c in &cells {
+                back.extend(h.recent(c, since, self.per_cell).await);
+            }
+            if !back.is_empty() {
+                let _ = self.tx.send(Command::Restore(back));
+            }
+        }
+        Ok(cells)
     }
 
     /// Sends a message to a followed cell (the centre by default), signed
@@ -658,6 +698,7 @@ impl Seen {
 struct State {
     config: ConsoleConfig,
     db: Db,
+    history: Option<History>,
     /// Group ID (hex) -> state and the pinned Nostr address of its creator.
     groups: BTreeMap<String, (crate::groups::GroupState, String)>,
     group_msgs: VecDeque<GroupChat>,
@@ -815,6 +856,7 @@ impl State {
             Command::Status(reply) => {
                 let _ = reply.send(self.status());
             }
+            Command::Restore(messages) => self.restore(messages),
             Command::Shutdown => {}
         }
     }
@@ -988,6 +1030,9 @@ impl State {
             received: self.next_arrival(),
         };
         self.store.add(message.clone());
+        if let Some(h) = &self.history {
+            h.channel(&message);
+        }
         self.emit(ConsoleEvent::Message(message.clone()));
         Ok(message)
     }
@@ -1060,6 +1105,9 @@ impl State {
     }
 
     fn keep_dm(&mut self, dm: DirectMessage) {
+        if let (Some(h), Ok(me)) = (&self.history, self.config.seed.cell(&dm.cell)) {
+            h.dm(&dm, &me.pubkey_hex());
+        }
         self.dms.push_back(dm.clone());
         while self.dms.len() > MAX_DMS {
             self.dms.pop_front();
@@ -1078,6 +1126,9 @@ impl State {
             }
         }
         if changed {
+            if let Some(h) = &self.history {
+                h.dm_status(id, status);
+            }
             self.emit(ConsoleEvent::DmStatus {
                 id: id.to_owned(),
                 status,
@@ -1104,6 +1155,9 @@ impl State {
             d.read = true;
         }
         let ids: Vec<String> = unread.into_iter().map(|(id, _)| id).collect();
+        if let Some(h) = &self.history {
+            h.dm_read(&ids);
+        }
         if let Err(e) = self.db.set_read(&ids, unix_now()) {
             tracing::warn!(error = %e, "cannot remember read messages");
         }
@@ -1507,7 +1561,27 @@ impl State {
             received: self.next_arrival(),
         };
         if self.store.add(message.clone()) {
+            if let Some(h) = &self.history {
+                h.channel(&message);
+            }
             self.emit(ConsoleEvent::Message(message));
+        }
+    }
+
+    /// Messages of the history, back in the feed of cells still followed;
+    /// a relay sending one of them again only adds itself to it.
+    fn restore(&mut self, messages: Vec<Message>) {
+        let mut any = false;
+        for mut m in messages {
+            if !self.cells.contains(&m.cell) || self.seen.contains(&m.id) {
+                continue;
+            }
+            self.seen.insert(&m.id);
+            m.received = self.next_arrival();
+            any |= self.store.add(m);
+        }
+        if any {
+            self.emit(ConsoleEvent::Area);
         }
     }
 
