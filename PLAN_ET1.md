@@ -8,7 +8,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 |---|---|---|
 | 0 | Mise en place : dépôts, crates, dépendances, `AGENTS.md` | ✅ |
 | 1 | Crate commune `geohash-relays` : listes, règles iOS et Android, voisins, interface de stratégie | ✅ |
-| 2 | Connecteur Tor (SOCKS5, isolation par geohash), refus du clair | ⬜ |
+| 2 | Connecteur Tor (SOCKS5, isolation par geohash), refus du clair | ✅ |
 | 3 | Identités : graine, clé par geohash, identité Noise | ⬜ |
 | 4 | Lecture : 9 cellules, connexions, abonnements, fil, changement de geohash à chaud | ⬜ |
 | 5 | Écriture : messages, preuve de travail, présences, marque `teleport` | ⬜ |
@@ -57,15 +57,21 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
 - [x] `README.md` pensé pour une PR vers les apps : règle de chaque app, fichier et fonction
       sources.
 
-### Lot 2 : connecteur Tor ⬜
+### Lot 2 : connecteur Tor ✅
 
-- [ ] Trait `Connector` : ouvre un flux vers `host:port` pour une cellule donnée.
-- [ ] Client SOCKS5 (méthode « utilisateur/mot de passe » pour l'isolation : un identifiant
-      par geohash, `IsolateSOCKSAuth`) ; résolution DNS par Tor (`ATYP` domaine).
-- [ ] Au démarrage : `tor` absent ou injoignable → arrêt avec message clair, jamais de
-      connexion directe. Connexion directe seulement vers une adresse de bouclage, et
-      seulement dans les tests.
-- [ ] Tests : serveur SOCKS5 de test local (isolation vérifiée par les identifiants reçus).
+- [x] Trait `Connector` : ouvre un flux vers `host:port` pour une clé d'isolation (une
+      cellule, D20).
+- [x] Client SOCKS5 `Socks5` (RFC 1928 + 1929) : identifiant `bitchat-console/<cellule>`,
+      donc un circuit par cellule (`IsolateSOCKSAuth`) ; `CONNECT` par nom de domaine, résolu
+      par Tor, jamais localement ; délai de 60 s ; codes de refus du proxy traduits.
+- [x] `Socks5::check` : au démarrage, un proxy SOCKS5 doit répondre, sinon
+      `Error::TorUnavailable` (« start tor, or give its SOCKS address with --tor-socks »).
+      `Loopback` : connexion directe vers le seul bouclage (`localhost`, `127/8`, `::1`), pour
+      les tests ; tout autre hôte est refusé (`PermissionDenied`).
+- [x] Tests : proxy SOCKS5 de test (`tests/common/socks.rs`) qui enregistre identifiant, hôte
+      et port et relaie vers un serveur d'écho : identifiants distincts par cellule, nom non
+      résolu, cible refusée expliquée, absence de proxy ou serveur non SOCKS → erreur,
+      bouclage seul.
 
 ### Lot 3 : identités ⬜
 
@@ -154,6 +160,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D16 | Stockage local | Messages reçus et émis : tampon en mémoire par cellule, borné (nombre et durée), perdu à l'arrêt ; historique local en option (SQLite, conservation limitée, purge) ; mutes, préenregistrés, groupes : SQLite. Interface `MessageStore` isolée (Redis branchable plus tard si plusieurs processus doivent partager le fil). Redis écarté pour l'étape 1 : démon de plus, persistance disque par défaut contraire à D11, lisible par tout processus local | ✅ |
 | D18 | Licence de `geohash-relays` | Unlicense (domaine public), comme l'app iOS ; compatible avec la GPL-3.0 de l'app Android, donc proposable aux deux | ✅ |
 | D19 | Calcul des geohash dans `geohash-relays` | Module maison sans dépendance (décodage, encodage, voisins), aligné sur `Geohash.swift` d'iOS plutôt que sur la crate `geohash` (qui fait boucler la latitude aux pôles) : crate facile à transposer dans les apps — *prise par l'agent, à revoir* | ✅ |
+| D20 | Isolation Tor | Une connexion par couple (relais, cellule), chacune avec son identifiant SOCKS, donc son circuit Tor : un relais ne voit sur une connexion qu'une cellule et sa clé, et ne peut pas relier les clés de deux cellules par la connexion ni par l'adresse de sortie (l'app iOS partage une connexion par relais et n'isole pas ses flux). Coût : plus de connexions — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -176,3 +183,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 0 | D18 : `geohash-relays` sous Unlicense (iOS : Unlicense, Android : GPL-3.0). Crates `bitchat-console` et `geohash-relays` créées (squelettes, `[workspace]` propre, fmt, clippy et tests verts), dépôts git locaux, dépôts GitHub privés créés et reliés (`origin`), rien de poussé. |
 | 28/10/2026 | 0 | Lot 0 commité dans les deux dépôts (`977e4cd` console, `4861316` geohash-relays) et poussé. L'utilisateur laisse l'agent poursuivre seul (un commit par lot, CHANGELOG, décisions tracées) ; relais `relay.famillevital.club` autorisé pour tous les tests. |
 | 28/10/2026 | 1 | `geohash-relays` : listes, sélection (portées de bitchat-geohash sans réseau), module `geohash` maison (D19), `Strategy`/`AppStrategy`, README. 24 tests (17 de sélection repris tels quels), clippy et rustdoc propres. Commité `55f63cd`. |
+| 28/10/2026 | 2 | Connecteur : trait `Connector`, `Socks5` (isolation par identifiant, D20), `Loopback` (tests seulement), `Error::TorUnavailable`. 7 tests (proxy SOCKS5 de test). `tor` n'est pas installé sur la machine : essai réel avec Tor reporté au lot 11 (Arti, sans rien installer) ou à l'utilisateur. |

@@ -4,6 +4,7 @@
 //! one key per cell like the app; DMs, mixed groups, and a page in the
 //! browser. See `SPECIFICATIONS.md` and `PLAN_ET1.md`.
 
+pub mod connector;
 mod error;
 
 pub use error::{Error, Result};
