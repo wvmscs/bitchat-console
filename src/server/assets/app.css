@@ -66,3 +66,17 @@ h3 { font-size: 13px; margin: 10px 0 4px; }
 .people { margin-top: 10px; }
 .people h3 { margin: 6px 0 2px; }
 .people .you { color: var(--accent); margin-bottom: 4px; }
+.fold { margin: 6px 0; }
+.fold > summary { cursor: pointer; font-weight: 600; margin: 4px 0; }
+.fold > .scroll { max-height: 16em; overflow-y: auto; overscroll-behavior: contain; }
+#feed .fold { flex: 1; }
+#feed .fold > .scroll { max-height: calc(100vh - 170px); }
+[data-scroll="convos"] { display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 800px) {
+  #feed .fold > .scroll { max-height: 45vh; }
+}
+.text-row { margin: 2px 0; overflow-wrap: anywhere; }
+.convo.new { font-weight: 600; border-color: var(--accent); }
+.status.read { color: var(--accent); font-weight: 600; }
+.unread { color: var(--accent); font-weight: 600; }
+.unread[hidden] { display: none; }

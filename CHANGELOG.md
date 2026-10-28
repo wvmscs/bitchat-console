@@ -11,6 +11,8 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- Page: lists fold and scroll within a bounded height, open or closed as the user left them (people of the cell, relay messages, channel messages, conversations, a conversation, a group's messages). Relay messages grouped: one line per relay and text, with how many times, when last, in which cells.
+- Page: sound (two short tones, can be turned off: 🔔 in the top bar) on a new private message, unless its conversation is open and shown; unread count in the top bar (✉, opens the first), in the tab title and on each conversation; "✓✓ read" stands out on sent messages. `DirectMessage::read` (set when the read receipt is sent).
 - NIP-42 (D28): a relay's AUTH challenge is answered with the connection's own key (the cell's, or the group's); the subscription and the publications refused with `auth-required:` are sent again, once. A refusal after authentication (whitelist) is final; a refused AUTH gives the relay up. "authenticated (NIP-42)" in the relay messages. Test relay with NIP-42 modes (`tests/auth.rs`).
 - Page: the console's own key in each cell ("you #376d"), and the people of the current cell (the one shown alone, else the centre): nickname, teleported, messages, last seen; a name opens a private conversation, 🔇 mutes. `Console::participants`, `GET /api/participants?cell=…` (memory only, like the rest).
 - `tests/real_tor.rs` can run through a Tor daemon (`BITCHAT_TOR_SOCKS=127.0.0.1:9050`), without the `arti` feature; checked for real (lot 12).

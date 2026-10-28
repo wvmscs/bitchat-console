@@ -70,7 +70,7 @@ async fn a_conversation_with_receipts() {
         (got[0].peer.as_str(), got[0].cell.as_str()),
         (alice_key.as_str(), "u09ty")
     );
-    assert!(!got[0].own);
+    assert!(!got[0].own && !got[0].read);
 
     // Bob's console acknowledged it at once; then reads it.
     dm_until(&alice, "delivered", |d| {
@@ -79,6 +79,7 @@ async fn a_conversation_with_receipts() {
     .await;
     assert_eq!(bob.mark_read(&alice_key).await.unwrap(), 1);
     assert_eq!(bob.mark_read(&alice_key).await.unwrap(), 0, "once");
+    assert!(bob.dms().await.unwrap()[0].read);
     dm_until(&alice, "read", |d| d[0].status == Some(DmStatus::Read)).await;
 
     // And back, from bob's key in that cell.

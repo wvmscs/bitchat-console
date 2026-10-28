@@ -3,8 +3,8 @@
 // nicknames, relay messages) only ever go through `textContent`.
 
 import {
-  author, clock, conversations, feed, gridOrder, isImage, linkify, people, personNote, relayCount,
-  repeatLabel, statusMark, unixFromLocal, visible,
+  author, clock, conversations, feed, gridOrder, groupTexts, isImage, linkify, people, personNote,
+  relayCount, repeatLabel, statusMark, unixFromLocal, unreadTotal, visible,
 } from "./view.js";
 
 function el(tag, cls, text) {
@@ -82,7 +82,16 @@ function keep(id, draw) {
   const focus = a && box.contains(a) && a.dataset.keep
     ? { key: a.dataset.keep, start: a.selectionStart, end: a.selectionEnd } : null;
   const top = box.scrollTop;
+  const scrolls = new Map([...box.querySelectorAll("[data-scroll]")]
+    .map(e => [e.dataset.scroll, { top: e.scrollTop, bottom: e.scrollHeight - e.scrollTop - e.clientHeight < 40 }]));
   draw(box);
+  // Inner lists keep their place; those marked `stick` follow the newest
+  // when they were at the bottom.
+  for (const e of box.querySelectorAll("[data-scroll]")) {
+    const was = scrolls.get(e.dataset.scroll);
+    if (e.dataset.stick !== undefined && (!was || was.bottom)) e.scrollTop = e.scrollHeight;
+    else if (was) e.scrollTop = was.top;
+  }
   for (const f of box.querySelectorAll("[data-keep]")) {
     if (!values.has(f.dataset.keep)) continue;
     const v = values.get(f.dataset.keep);
@@ -109,6 +118,54 @@ for (const name of ["pointerup", "pointercancel"]) {
   document.addEventListener(name, () => { pressed = false; setTimeout(flush, 0); }, true);
 }
 document.addEventListener("selectionchange", () => { if (later.size) flush(); });
+
+/// A list that folds (as the user left it) and scrolls within a bounded
+/// height, so that no list takes the whole panel.
+function fold(key, title, items, { open = true, stick = false } = {}) {
+  const d = el("details", "fold");
+  const was = saved("fold:" + key);
+  d.open = was ? was === "1" : open;
+  d.addEventListener("toggle", () => save("fold:" + key, d.open ? "1" : "0"));
+  const body = el("div", "scroll");
+  body.dataset.scroll = key;
+  if (stick) body.dataset.stick = "";
+  body.append(...items);
+  d.append(el("summary", null, title), body);
+  return d;
+}
+
+// --- Sound on a new private message ------------------------------------------
+//
+// The browser lets a page play sound only after the user has touched it:
+// the audio context is made at the first click or key.
+
+let audio = null;
+const unlock = () => {
+  try {
+    audio = audio || new AudioContext();
+    if (audio.state === "suspended") audio.resume();
+  } catch { /* no audio */ }
+};
+document.addEventListener("pointerdown", unlock, true);
+document.addEventListener("keydown", unlock, true);
+
+function ding() {
+  if (!ui.sound || !ui.sound.checked || !audio) return;
+  try {
+    const t = audio.currentTime;
+    for (const [f, at] of [[880, 0], [1320, 0.12]]) {
+      const o = audio.createOscillator();
+      const g = audio.createGain();
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(0.15, t + at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.2);
+      o.connect(g).connect(audio.destination);
+      o.start(t + at);
+      o.stop(t + at + 0.22);
+    }
+  } catch { /* no audio */ }
+}
 
 /// A field marked `key`, kept across re-rendering.
 function field(tag, key, cls) {
@@ -168,7 +225,20 @@ function buildTop() {
   ui.link = el("span", "link");
   ui.info = el("span", "muted");
   ui.error = el("span", "warn");
-  top.append(ui.title, ui.geohash, tl, ui.follow, ui.link, ui.info, ui.error);
+  ui.sound = el("input");
+  ui.sound.type = "checkbox";
+  ui.sound.checked = saved("sound") !== "0";
+  ui.sound.addEventListener("change", () => { save("sound", ui.sound.checked ? "1" : "0"); if (ui.sound.checked) ding(); });
+  const sl = el("label", "check");
+  sl.append(ui.sound, document.createTextNode(" 🔔"));
+  sl.title = "sound on a new private message";
+  ui.unread = el("button", "unread");
+  ui.unread.title = "unread private messages: open the first";
+  ui.unread.addEventListener("click", () => {
+    const d = state.dms.find(x => !x.own && !x.read);
+    if (d) openConvo(d.peer, d.cell);
+  });
+  top.append(ui.title, ui.geohash, tl, ui.follow, ui.link, ui.info, sl, ui.unread, ui.error);
 }
 
 async function follow() {
@@ -185,6 +255,10 @@ async function follow() {
 }
 
 function updateTop() {
+  const n = unreadTotal(state.dms);
+  ui.unread.textContent = n ? `✉ ${n}` : "";
+  ui.unread.hidden = !n;
+  document.title = (n ? `(${n}) ` : "") + "BitChat console";
   ui.link.className = "link " + state.link;
   ui.link.textContent = { live: "● live", connecting: "● connecting…", reconnecting: "● reconnecting…" }[state.link];
   const s = state.status;
@@ -247,12 +321,15 @@ function drawCells(box) {
     box.append(m);
   }
   if (state.texts.length) {
-    const log = el("details", "texts");
-    log.append(el("summary", "muted", `relay messages (${state.texts.length})`));
-    for (const t of state.texts.slice(-20)) {
-      log.append(el("div", "small", `${t.relay.replace(/^wss?:\/\//, "")} #${t.cell}: ${t.text}`));
-    }
-    box.append(log);
+    const groups = groupTexts(state.texts);
+    const rows = groups.map(g => {
+      const row = el("div", "small text-row");
+      row.append(el("b", null, g.relay.replace(/^wss?:\/\//, "")), document.createTextNode(" " + g.text + " "),
+        el("span", "muted", `×${g.count} · ${clock(g.last)} · #${g.cells.slice(0, 4).join(" #")}`
+          + (g.cells.length > 4 ? ` +${g.cells.length - 4}` : "")));
+      return row;
+    });
+    box.append(fold("relay-texts", `Relay messages (${groups.length})`, rows, { open: false }));
   }
 }
 
@@ -263,12 +340,12 @@ function drawPeople(s) {
   const known = state.people.cell === cell ? state.people.list : [];
   const list = people(known, me, state.local.mutes);
   const box = el("div", "people");
-  box.append(el("h3", null, `In #${cell} · ${list.length} other${list.length === 1 ? "" : "s"}`));
   if (me) {
     const you = el("div", "you small", "you: " + author(saved("nickname"), me));
     you.title = me;
     box.append(you);
   }
+  const rows = [];
   const now = Date.now() / 1000;
   for (const p of list) {
     const row = el("div", "row person");
@@ -285,9 +362,10 @@ function drawPeople(s) {
       mute.addEventListener("click", () => command("api/mute", { pubkey: p.pubkey, muted: true }));
       row.append(mute);
     }
-    box.append(row);
+    rows.push(row);
   }
-  if (!list.length) box.append(el("p", "muted small", "Nobody else seen here in the last 15 minutes."));
+  if (!list.length) rows.push(el("p", "muted small", "Nobody else seen here in the last 15 minutes."));
+  box.append(fold("people", `In #${cell} · ${list.length} other${list.length === 1 ? "" : "s"}`, rows));
   return box;
 }
 
@@ -310,7 +388,6 @@ function textNodes(parent, text) {
 function renderFeed() { keep("feed", drawFeed); }
 
 function drawFeed(box) {
-  const keepBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
   box.replaceChildren();
   const s = state.status;
   if (!s || !s.cells.length) return;
@@ -344,8 +421,9 @@ function drawFeed(box) {
     row.append(body);
     list.append(row);
   }
-  box.append(list, composer());
-  if (keepBottom) box.scrollTop = box.scrollHeight;
+  const n = list.querySelectorAll(".msg").length;
+  box.append(fold("feed", `Messages · ${n}${state.selected ? " in #" + state.selected : " in the 9 cells"}`,
+    [list], { stick: true }), composer());
 }
 
 function composer() {
@@ -390,37 +468,41 @@ function composer() {
 function openConvo(peer, cell) {
   state.convo = peer + "|" + cell;
   command("api/read", { peer });
+  for (const d of state.dms) if (!d.own && d.peer === peer) d.read = true;
   render();
 }
 
 function renderDms() { keep("dms", drawDms); }
 
 function drawDms(box) {
-  box.replaceChildren(el("h2", null, "Private messages"));
+  const total = unreadTotal(state.dms);
+  box.replaceChildren(el("h2", null, "Private messages" + (total ? ` · ${total} unread` : "")));
   const convos = conversations(state.dms);
   if (!convos.length && !state.convo) {
     box.append(el("p", "muted small", "Click a name in the feed to write to that person."));
     return;
   }
-  const list = el("div", "convos");
-  for (const c of convos.slice().reverse()) {
-    const b = el("button", "convo" + (state.convo === c.key ? " on" : ""), `#${c.peer.slice(-4)} in #${c.cell}`);
+  const buttons = convos.slice().reverse().map(c => {
+    const b = el("button", "convo" + (state.convo === c.key ? " on" : "") + (c.unread ? " new" : ""),
+      `#${c.peer.slice(-4)} in #${c.cell}` + (c.unread ? ` ● ${c.unread}` : ""));
     b.addEventListener("click", () => openConvo(c.peer, c.cell));
-    list.append(b);
-  }
-  box.append(list);
+    return b;
+  });
+  box.append(fold("convos", `Conversations (${convos.length})`, buttons));
   if (!state.convo) return;
   const [peer, cell] = state.convo.split("|");
   const convo = convos.find(c => c.key === state.convo);
-  const thread = el("div", "thread");
-  thread.append(el("div", "muted small", `with #${peer.slice(-4)} · your key of #${cell}`));
+  const rows = [];
   for (const d of convo ? convo.messages : []) {
     const row = el("div", "msg" + (d.own ? " own" : ""));
     const body = el("div", "body");
     textNodes(body, d.content);
-    row.append(el("span", "muted small", clock(d.created_at) + (d.own ? " " + statusMark(d.status) : "")), body);
-    thread.append(row);
+    const meta = el("span", "muted small", clock(d.created_at) + " ");
+    if (d.own) meta.append(el("span", "status " + (d.status || "sent"), statusMark(d.status)));
+    row.append(meta, body);
+    rows.push(row);
   }
+  box.append(fold("thread", `With #${peer.slice(-4)} · your key of #${cell}`, rows, { stick: true }));
   // Inviting this person to one of my groups (I am the creator).
   const mine = state.groups.groups.filter(g => g.creator_is_me);
   if (mine.length) {
@@ -454,7 +536,7 @@ function drawDms(box) {
   text.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
   const form = el("div", "composer");
   form.append(text, send, result);
-  box.append(thread, form);
+  box.append(form);
 }
 
 // --- Rendering and live stream ------------------------------------------------------
@@ -502,13 +584,13 @@ function drawGroups(box) {
       members.append(row);
     }
     box.append(members);
-    const thread = el("div", "thread");
+    const thread = [];
     for (const m of v.messages.filter(x => x.group === g.id)) {
       const row = el("div", "msg" + (m.own ? " own" : ""));
       const body = el("div", "body");
       textNodes(body, m.content);
       row.append(el("b", null, m.nickname || "?"), el("span", "muted small", " " + clock(m.created_at)), body);
-      thread.append(row);
+      thread.push(row);
     }
     const text = field("input", "group-text|" + g.id, "text");
     text.placeholder = "message to the group";
@@ -530,7 +612,7 @@ function drawGroups(box) {
         state.group = null;
       }
     });
-    box.append(thread, form, end);
+    box.append(fold("group-thread", `Messages of “${g.name}” (${thread.length})`, thread, { stick: true }), form, end);
   }
   const name = field("input", "group-name");
   name.placeholder = "new group name";
@@ -671,14 +753,26 @@ function connect() {
   });
   on("dm", dm => {
     state.dms.push(dm);
-    if (!dm.own && state.convo === dm.peer + "|" + dm.cell) command("api/read", { peer: dm.peer });
+    if (!dm.own) {
+      if (state.convo === dm.peer + "|" + dm.cell && document.visibilityState === "visible") {
+        command("api/read", { peer: dm.peer });
+        dm.read = true;
+      } else {
+        ding();
+      }
+    }
     renderDms();
+    updateTop();
   });
   on("dm_status", s => {
     for (const d of state.dms) if (d.own && d.id === s.id) d.status = s.status;
     renderDms();
   });
-  on("relay_text", t => { state.texts.push(t); renderCells(); });
+  on("relay_text", t => {
+    state.texts.push({ ...t, at: Date.now() / 1000 });
+    if (state.texts.length > 1000) state.texts.splice(0, state.texts.length - 1000);
+    renderCells();
+  });
   on("local", l => { state.local = l; renderCells(); renderFeed(); renderSaved(); });
   on("groups", g => { state.groups = g; renderGroups(); renderDms(); });
   on("group_message", m => {

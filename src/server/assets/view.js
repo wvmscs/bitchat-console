@@ -50,14 +50,35 @@ export function conversations(dms) {
     if (!by.has(key)) by.set(key, { key, peer: d.peer, cell: d.cell, messages: [], unread: 0 });
     const c = by.get(key);
     c.messages.push(d);
+    if (!d.own && !d.read) c.unread += 1;
   }
   return [...by.values()].sort((a, b) =>
     (a.messages.at(-1)?.created_at ?? 0) - (b.messages.at(-1)?.created_at ?? 0));
 }
 
-// "✓" relayed, "✓✓" delivered, "read" read; nothing before a relay answers.
+// "✓" relayed, "✓✓" delivered, "✓✓ read" read; "…" before a relay answers.
 export function statusMark(status) {
-  return { relayed: "✓", delivered: "✓✓", read: "read" }[status] ?? "…";
+  return { relayed: "✓", delivered: "✓✓", read: "✓✓ read" }[status] ?? "…";
+}
+
+// Unread private messages, all conversations.
+export function unreadTotal(dms) {
+  return dms.filter(d => !d.own && !d.read).length;
+}
+
+// Relay messages, the same text of the same relay once, with how many
+// times and in which cells; the latest first.
+export function groupTexts(texts) {
+  const by = new Map();
+  for (const t of texts) {
+    const key = t.relay + "\n" + t.text;
+    const g = by.get(key) || { relay: t.relay, text: t.text, count: 0, cells: [], last: 0 };
+    g.count += 1;
+    if (!g.cells.includes(t.cell)) g.cells.push(t.cell);
+    g.last = Math.max(g.last, t.at ?? 0);
+    by.set(key, g);
+  }
+  return [...by.values()].sort((a, b) => b.last - a.last);
 }
 
 // Messages of the selected cells, oldest first, without duplicates.

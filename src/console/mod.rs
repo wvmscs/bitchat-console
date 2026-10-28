@@ -214,6 +214,8 @@ pub struct DirectMessage {
     pub own: bool,
     /// For messages the console sent.
     pub status: Option<DmStatus>,
+    /// For messages received: the user has read them (read receipt sent).
+    pub read: bool,
 }
 
 /// What the user keeps locally: muted keys, saved and scheduled messages.
@@ -992,6 +994,7 @@ impl State {
             created_at: unix_now(),
             own: true,
             status: Some(DmStatus::Sent),
+            read: false,
         };
         self.keep_dm(dm.clone());
         Ok(dm)
@@ -1037,6 +1040,9 @@ impl State {
                 self.publish_dm(cell, &wrap);
             }
             self.read_sent.insert(id.clone());
+        }
+        for d in self.dms.iter_mut().filter(|d| !d.own && d.peer == peer) {
+            d.read = true;
         }
         unread.len()
     }
@@ -1106,6 +1112,7 @@ impl State {
                     created_at: opened.created_at.min(unix_now()),
                     own: false,
                     status: None,
+                    read: false,
                 });
             }
             t @ (packet::payload::DELIVERED | packet::payload::READ_RECEIPT) => {

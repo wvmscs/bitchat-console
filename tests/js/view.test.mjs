@@ -61,3 +61,28 @@ test("people of a cell", () => {
   assert.match(v.personNote(list[3], now), /\d · 1 msg$/);
   assert.match(v.personNote(list[2], now), / · presence$/);
 });
+
+test("unread private messages", () => {
+  const dms = [
+    { peer: "p1", cell: "a", created_at: 1, own: false, read: false },
+    { peer: "p1", cell: "a", created_at: 2, own: true, read: false },
+    { peer: "p2", cell: "a", created_at: 3, own: false, read: true },
+    { peer: "p2", cell: "a", created_at: 4, own: false, read: false },
+  ];
+  assert.deepEqual(v.conversations(dms).map(c => [c.peer, c.unread]), [["p1", 1], ["p2", 1]]);
+  assert.equal(v.unreadTotal(dms), 2);
+  assert.equal(v.statusMark("read"), "✓✓ read");
+  assert.equal(v.statusMark(null), "…");
+});
+
+test("relay messages grouped", () => {
+  const t = (relay, cell, text, at) => ({ relay, cell, text, at });
+  const g = v.groupTexts([
+    t("wss://a", "u09tv", "auth-required: x", 1),
+    t("wss://b", "u09tv", "refused: y", 2),
+    t("wss://a", "u09ty", "auth-required: x", 3),
+    t("wss://a", "u09tv", "auth-required: x", 4),
+  ]);
+  assert.deepEqual(g.map(x => [x.relay, x.count, x.cells.join(","), x.last]),
+    [["wss://a", 3, "u09tv,u09ty", 4], ["wss://b", 1, "u09tv", 2]]);
+});
