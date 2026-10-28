@@ -198,3 +198,21 @@ export function feedCells(cells, center, selected, muteNeighbours) {
   if (selected) return [selected];
   return muteNeighbours ? cells.filter(c => c === center) : cells;
 }
+
+// Lot 15: someone not seen in their cell (presence or message) for
+// `present.departure_secs` has left. `present` is `GET /api/present`; none
+// yet: nobody has left. `also`: another time they were active (a private
+// message from them).
+export function hasLeft(present, cell, pubkey, now, also = 0) {
+  if (!present) return false;
+  const seen = present.cells?.[cell]?.[pubkey] ?? 0;
+  return now - Math.max(seen, also) > present.departure_secs;
+}
+
+// A conversation is over when the other side has left its cell and has
+// written nothing for as long; never while a message is unread.
+export function convoOver(convo, present, now) {
+  if (convo.unread) return false;
+  const last = Math.max(0, ...convo.messages.filter(d => !d.own).map(d => d.created_at));
+  return hasLeft(present, convo.cell, convo.peer, now, last);
+}

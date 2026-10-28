@@ -108,6 +108,8 @@ fn console_routes(prefix: &str) -> Router<api::AppState> {
         .route(&p("/api/area"), post(api::area))
         .route(&p("/api/send"), post(api::send))
         .route(&p("/api/dm"), post(api::dm))
+        .route(&p("/api/dm/delete"), post(api::delete_dms))
+        .route(&p("/api/present"), get(api::present))
         .route(&p("/api/read"), post(api::read))
         .route(&p("/api/mute"), post(api::mute))
         .route(&p("/api/nickname"), post(api::nickname))

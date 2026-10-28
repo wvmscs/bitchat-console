@@ -147,6 +147,18 @@ async fn page_and_state() {
         (&v["local"]["nickname"], &v["local"]["anon_cells"]),
         (&json!("bob"), &json!(["u09ty"]))
     );
+    // Lot 15: who is still there, deleting private messages.
+    let (status, body) = http(r.addr, "GET", "/api/present", &[r.host()], "").await;
+    let v: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!((status, &v["departure_secs"]), (200, &json!(600)));
+    let peer = "ab".repeat(32);
+    let (status, b) = r
+        .post(
+            "/api/dm/delete",
+            &format!(r#"{{"peer":"{peer}","cell":"u09ty"}}"#),
+        )
+        .await;
+    assert_eq!((status, &b["deleted"]), (200, &json!(0)));
 }
 
 #[tokio::test]

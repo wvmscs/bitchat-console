@@ -71,6 +71,10 @@ pub struct ConsoleConfig {
     pub per_cell: usize,
     /// A participant counts while seen within this window.
     pub participant_window_secs: i64,
+    /// Someone not seen (presence or message) for this long has left their
+    /// cell (lot 15): their messages are dimmed, a conversation with them
+    /// put away.
+    pub departure_secs: i64,
 }
 
 impl ConsoleConfig {
@@ -94,6 +98,7 @@ impl ConsoleConfig {
             limit: 200,
             per_cell: 500,
             participant_window_secs: 15 * 60,
+            departure_secs: 10 * 60,
         }
     }
 }
@@ -131,6 +136,16 @@ pub struct Participant {
     pub teleport: bool,
     /// Channel messages seen from them in the window.
     pub messages: u32,
+}
+
+/// When each key was last seen in each cell (lot 15), in memory only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Presence {
+    pub now: i64,
+    /// Not seen for this long: left.
+    pub departure_secs: i64,
+    /// Cell -> key -> last seen (presence or message).
+    pub cells: BTreeMap<String, BTreeMap<String, i64>>,
 }
 
 /// What is kept of a key in a cell.
@@ -255,6 +270,8 @@ pub enum ConsoleEvent {
     /// A connection changed state.
     Relays,
     Dm(DirectMessage),
+    /// Private messages went away (deleted): the whole list again.
+    Dms,
     DmStatus {
         id: String,
         status: DmStatus,
@@ -295,6 +312,13 @@ enum Command {
     Groups(oneshot::Sender<GroupsView>),
     Messages(String, oneshot::Sender<Vec<Message>>),
     Participants(String, oneshot::Sender<Vec<Participant>>),
+    Presence(oneshot::Sender<Presence>),
+    DeleteDms {
+        peer: String,
+        cell: String,
+        ids: Option<Vec<String>>,
+        reply: oneshot::Sender<Result<usize>>,
+    },
     Status(oneshot::Sender<AreaStatus>),
     /// Messages of the history back in the feed.
     Restore(Vec<Message>),
@@ -612,6 +636,31 @@ impl Console {
         self.ask(|r| Command::Participants(c, r)).await
     }
 
+    /// When each key was last seen in each cell (lot 15).
+    pub async fn presence(&self) -> Result<Presence> {
+        self.ask(Command::Presence).await
+    }
+
+    /// Deletes private messages of the conversation with `peer` in `cell`:
+    /// those of `ids`, or all. Locally only (relays keep the envelopes):
+    /// they stay deleted after a restart, and lose their content in the
+    /// history. Returns how many.
+    pub async fn delete_dms(
+        &self,
+        peer: &str,
+        cell: &str,
+        ids: Option<Vec<String>>,
+    ) -> Result<usize> {
+        let (peer, cell) = (peer.to_lowercase(), cell.to_lowercase());
+        self.ask(|reply| Command::DeleteDms {
+            peer,
+            cell,
+            ids,
+            reply,
+        })
+        .await?
+    }
+
     /// Changes from now on.
     pub fn subscribe(&self) -> broadcast::Receiver<ConsoleEvent> {
         self.events.subscribe()
@@ -857,6 +906,17 @@ impl State {
                 let _ = reply.send(self.status());
             }
             Command::Restore(messages) => self.restore(messages),
+            Command::Presence(reply) => {
+                let _ = reply.send(self.presence());
+            }
+            Command::DeleteDms {
+                peer,
+                cell,
+                ids,
+                reply,
+            } => {
+                let _ = reply.send(self.delete_dms(&peer, &cell, ids.as_deref()));
+            }
             Command::Shutdown => {}
         }
     }
@@ -1208,6 +1268,11 @@ impl State {
                 let Some((id, content)) = packet::decode_private_message(body) else {
                     return;
                 };
+                // Deleted by the user (lot 15): a relay sending it again
+                // does not bring it back.
+                if self.db.is_deleted(&id).unwrap_or(false) {
+                    return;
+                }
                 if self
                     .dms
                     .iter()
@@ -1411,6 +1476,46 @@ impl State {
         self.participants
             .get(cell)
             .map_or(0, |m| m.values().filter(|s| s.last >= from).count())
+    }
+
+    fn presence(&self) -> Presence {
+        let now = unix_now();
+        let from = now - self.config.participant_window_secs;
+        Presence {
+            now,
+            departure_secs: self.config.departure_secs,
+            cells: self
+                .participants
+                .iter()
+                .map(|(cell, people)| {
+                    let seen = people
+                        .iter()
+                        .filter(|(_, s)| s.last >= from)
+                        .map(|(k, s)| (k.clone(), s.last))
+                        .collect();
+                    (cell.clone(), seen)
+                })
+                .collect(),
+        }
+    }
+
+    fn delete_dms(&mut self, peer: &str, cell: &str, ids: Option<&[String]>) -> Result<usize> {
+        let doomed = |d: &DirectMessage| {
+            d.peer == peer && d.cell == cell && ids.is_none_or(|ids| ids.contains(&d.id))
+        };
+        let gone: Vec<String> = self
+            .dms
+            .iter()
+            .filter(|d| doomed(d))
+            .map(|d| d.id.clone())
+            .collect();
+        self.dms.retain(|d| !doomed(d));
+        self.db.set_deleted(&gone, unix_now())?;
+        if let Some(h) = &self.history {
+            h.dm_deleted(&gone);
+        }
+        self.emit(ConsoleEvent::Dms);
+        Ok(gone.len())
     }
 
     fn participants_of(&self, cell: &str, now: i64) -> Vec<Participant> {

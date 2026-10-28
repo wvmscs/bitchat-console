@@ -178,3 +178,84 @@ async fn read_stays_read_after_a_restart() {
     alice.shutdown().await;
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[tokio::test]
+async fn deleted_stay_deleted_after_a_restart() {
+    // Lot 15: deleted here only; the relay keeps the envelopes and sends
+    // them again after a restart, they stay deleted.
+    let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
+    let dir = std::env::temp_dir().join(format!("bitchat-console-deleted-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bob_at = |dir: &std::path::Path| {
+        let mut c = config(&[relay.url()], Arc::new(Loopback));
+        c.seed = Arc::new(Seed::from_bytes([2; 32]));
+        c.db_path = Some(dir.join("console.sqlite"));
+        c.history_path = Some(dir.join("history.sqlite"));
+        Console::start(c)
+    };
+    let alice = console_with_seed(&[relay.url()], [1; 32]);
+    let bob = bob_at(&dir);
+    for c in [&alice, &bob] {
+        c.set_area("u09tv", true).await.unwrap();
+        status_until(c, "connected", all_connected).await;
+    }
+    let key = |n: u8| {
+        Seed::from_bytes([n; 32])
+            .cell("u09ty")
+            .unwrap()
+            .pubkey_hex()
+    };
+    let (alice_key, bob_key) = (key(1), key(2));
+    let one = alice.send_dm(&bob_key, "u09ty", "one").await.unwrap();
+    alice.send_dm(&bob_key, "u09ty", "two").await.unwrap();
+    dm_until(&bob, "two messages", |d| d.len() == 2).await;
+    bob.send_dm(&alice_key, "u09ty", "mine").await.unwrap();
+
+    // One message, then the rest of the conversation.
+    assert_eq!(
+        bob.delete_dms(&alice_key, "u09ty", Some(vec![one.id.clone()]))
+            .await
+            .unwrap(),
+        1
+    );
+    let left: Vec<String> = bob
+        .dms()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|d| d.content)
+        .collect();
+    assert_eq!(left, ["two", "mine"]);
+    assert_eq!(bob.delete_dms(&alice_key, "u09ty", None).await.unwrap(), 2);
+    assert!(bob.dms().await.unwrap().is_empty());
+    bob.history().unwrap().flush().await;
+    let contents: Vec<Option<String>> = rusqlite::Connection::open(dir.join("history.sqlite"))
+        .unwrap()
+        .prepare("SELECT content FROM message WHERE kind = 'dm' AND deleted_at IS NOT NULL")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(contents, [None, None, None], "their content is gone");
+    bob.shutdown().await;
+
+    // After a restart: the relay sends them again, they stay out; a new
+    // one comes in.
+    let bob = bob_at(&dir);
+    bob.set_area("u09tv", true).await.unwrap();
+    status_until(&bob, "connected", all_connected).await;
+    alice.send_dm(&bob_key, "u09ty", "new").await.unwrap();
+    let d = dm_until(&bob, "the new message", |d| !d.is_empty()).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let d2 = bob.dms().await.unwrap();
+    assert_eq!(d.len(), 1);
+    assert_eq!(
+        d2.iter().map(|d| d.content.as_str()).collect::<Vec<_>>(),
+        ["new"]
+    );
+    bob.shutdown().await;
+    alice.shutdown().await;
+    std::fs::remove_dir_all(&dir).unwrap();
+}

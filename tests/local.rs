@@ -189,3 +189,34 @@ async fn one_nickname_not_sent_where_chosen() {
     c.shutdown().await;
     let _ = std::fs::remove_file(db);
 }
+
+#[tokio::test]
+async fn who_is_still_there() {
+    // Lot 15: when each key was last seen in each cell.
+    let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
+    let c = console(&[relay.url()], Arc::new(Loopback));
+    c.set_area("u09tv", true).await.unwrap();
+    status_until(&c, "connected", all_connected).await;
+    let dan = Identity::generate();
+    relay.publish(channel_event(
+        &dan,
+        bitchat_console::console::KIND_MESSAGE,
+        "u09ty",
+        &[],
+        "là",
+    ));
+    let p = loop {
+        let p = c.presence().await.unwrap();
+        if p.cells
+            .get("u09ty")
+            .is_some_and(|m| m.contains_key(&dan.public_key_hex()))
+        {
+            break p;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert_eq!(p.departure_secs, 600);
+    let at = p.cells["u09ty"][&dan.public_key_hex()];
+    assert!((p.now - 5..=p.now).contains(&at));
+    c.shutdown().await;
+}

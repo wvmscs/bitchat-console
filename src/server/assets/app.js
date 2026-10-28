@@ -3,7 +3,7 @@
 // nicknames, relay messages) only ever go through `textContent`.
 
 import {
-  author, clock, conversations, feed, feedCells, gridOrder, groupTexts, isImage, linkify, nicknames, people, personNote,
+  author, clock, conversations, convoOver, hasLeft, feed, feedCells, gridOrder, groupTexts, isImage, linkify, nicknames, people, personNote,
   relayCount, repeatLabel, statusMark, unixFromLocal, unreadTotal, visible,
 } from "./view.js";
 
@@ -31,6 +31,7 @@ const state = {
   writeCell: null,      // cell chosen in the composer, until another is shown
   people: { cell: null, list: [] },  // participants of the current cell
   muteNeighbours: false,  // the feed shows the centre only (kept in the browser)
+  present: null,        // last seen of each key in each cell (lot 15)
 };
 state.muteNeighbours = (() => { try { return localStorage.getItem("muteNeighbours") === "1"; } catch { return false; } })();
 
@@ -85,6 +86,22 @@ async function command(path, body) {
   } catch {
     return { ok: false, data: { message: "server unreachable" } };
   }
+}
+
+// Who is still in their cell (lot 15): asked every 20 s; a message seen in
+// between counts at once.
+const now = () => Date.now() / 1000;
+async function refreshPresent() {
+  try {
+    const r = await fetch("api/present");
+    if (r.ok) { state.present = await r.json(); renderFeed(); renderDms(); }
+  } catch { /* the stream says when the console is gone */ }
+}
+setInterval(refreshPresent, 20_000);
+function seenNow(cell, pubkey, at) {
+  if (!state.present) return;
+  const c = state.present.cells[cell] || (state.present.cells[cell] = {});
+  c[pubkey] = Math.max(c[pubkey] || 0, at);
 }
 
 // --- Re-rendering without getting in the way --------------------------------
@@ -480,7 +497,9 @@ function drawFeed(box) {
     list.append(bar);
   }
   for (const m of visible(feed(state.messages, cells), state.local.mutes, state.isolate)) {
-    const row = el("div", "msg" + (m.own ? " own" : ""));
+    const left = !m.own && hasLeft(state.present, m.cell, m.pubkey, now());
+    const row = el("div", "msg" + (m.own ? " own" : "") + (left ? " left" : ""));
+    if (left) row.title = "left the cell (not seen for 10 min)";
     const who = el("button", "who", author(m.nickname, m.pubkey));
     who.title = m.own ? "you" : "private message";
     if (!m.own) who.addEventListener("click", () => openConvo(m.pubkey, m.cell));
@@ -575,14 +594,23 @@ function drawDms(box) {
     box.append(el("p", "muted small", "Click a name in the feed to write to that person."));
     return;
   }
-  const buttons = convos.slice().reverse().map(c => {
+  const button = c => {
     const b = el("button", "convo" + (state.convo === c.key ? " on" : "") + (c.unread ? " new" : ""),
       `${author(names.get(c.peer), c.peer)} in #${c.cell}` + (c.unread ? ` ● ${c.unread}` : ""));
     b.title = c.peer;
     b.addEventListener("click", () => openConvo(c.peer, c.cell));
     return b;
-  });
-  box.append(fold("convos", `Conversations (${convos.length})`, buttons, { hold: true }));
+  };
+  // Over when the other side left its cell (lot 15); the open one stays.
+  const t = now();
+  const over = c => c.key !== state.convo && convoOver(c, state.present, t);
+  const newest = convos.slice().reverse();
+  const active = newest.filter(c => !over(c)), ended = newest.filter(over);
+  box.append(fold("convos", `Conversations (${active.length})`, active.map(button), { hold: true }));
+  if (ended.length) {
+    box.append(fold("ended", `Ended (${ended.length}): the other side left`, ended.map(button),
+      { open: false, hold: true }));
+  }
   if (!state.convo) return;
   const [peer, cell] = state.convo.split("|");
   const convo = convos.find(c => c.key === state.convo);
@@ -593,10 +621,24 @@ function drawDms(box) {
     textNodes(body, d.content);
     const meta = el("span", "muted small", clock(d.created_at) + " ");
     if (d.own) meta.append(el("span", "status " + (d.status || "sent"), statusMark(d.status)));
-    row.append(meta, body);
+    const del = el("button", "mute", "×");
+    del.title = "delete this message (here only: the other side keeps it)";
+    del.setAttribute("aria-label", "delete");
+    del.addEventListener("click", () => command("api/dm/delete", { peer, cell, ids: [d.id] }));
+    row.append(meta, del, body);
     rows.push(row);
   }
   box.append(fold("thread", `With ${author(names.get(peer), peer)} · your key of #${cell}`, rows, { stick: true }));
+  if (rows.length) {
+    const wipe = el("button", "small", "delete the conversation");
+    wipe.title = "here only: the other side keeps it";
+    wipe.addEventListener("click", () => {
+      if (confirm("Delete this conversation here? The other side keeps it.")) {
+        command("api/dm/delete", { peer, cell });
+      }
+    });
+    box.append(wipe);
+  }
   // Inviting this person to one of my groups (I am the creator).
   const mine = state.groups.groups.filter(g => g.creator_is_me);
   if (mine.length) {
@@ -837,6 +879,7 @@ function onState(d) {
   handOverNickname();
   render();
   refreshPeople();
+  refreshPresent();
 }
 
 let source = null;
@@ -852,6 +895,7 @@ function connect() {
   on("message", m => {
     const list = state.messages[m.cell] || (state.messages[m.cell] = []);
     if (!list.some(x => x.id === m.id)) list.push(m);
+    seenNow(m.cell, m.pubkey, m.created_at);
     renderCells(); renderFeed();
     if (m.cell === currentCell()) refreshPeople();
     // A correspondent's nickname, now known.
@@ -882,6 +926,7 @@ function connect() {
     renderDms();
     updateTop();
   });
+  on("dms", list => { state.dms = list; renderDms(); updateTop(); });
   on("dm_status", s => {
     for (const d of state.dms) if (d.own && d.id === s.id) d.status = s.status;
     renderDms();

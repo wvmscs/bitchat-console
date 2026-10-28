@@ -21,7 +21,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 12 | Validation réelle | ⏳ (avec l'utilisateur) |
 | 13 | Zones de saisie (défilement), pseudo côté serveur, envoi du pseudo par cellule (D32) | ✅ |
 | 14 | Base d'historique `history.sqlite` (D31) : schéma, écriture, droits, recréation | ✅ |
-| 15 | Critère de départ (10 min) : messages grisés, DM cachés, effacement des DM | ☐ |
+| 15 | Critère de départ (10 min) : messages grisés, DM cachés, effacement des DM | ✅ |
 | 16 | Onglet d'historique : recherche, tri, sélection, effacement ; modifications externes en direct | ☐ |
 | 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ☐ |
 
@@ -400,15 +400,25 @@ Demandé dans [EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) (28/10/2026).
       ses 9 cellules reviennent de la base dans le fil (effacés exclus).
 - [x] `AGENTS.md` : la règle « rien sur disque » renvoie à D31.
 
-### Lot 15 : départ des intervenants ☐
+### Lot 15 : départ des intervenants ✅
 
-- [ ] Critère : ni présence (20001) ni message (20000) d'une clé dans la cellule depuis
-      10 min (réglable). Un téléporté n'envoie jamais de présence (D22) : seuls ses messages
-      comptent.
-- [ ] Messages de canal grisés (lisibles) quand leur auteur est parti.
-- [ ] DM : conversations cachées quand le correspondant est parti, jamais tant qu'un message
-      n'est pas lu ; un nouveau message les rouvre ; toujours lisibles dans l'historique.
-- [ ] Effacement des DM par l'utilisateur (local : les relais gardent les enveloppes).
+- [x] Critère : ni présence (20001) ni message (20000) d'une clé dans la cellule depuis
+      10 min (`ConsoleConfig::departure_secs`). Un téléporté n'envoie jamais de présence
+      (D22) : seuls ses messages comptent. `GET /api/present` (`Console::presence`) : dernière
+      activité de chaque clé dans chaque cellule, en mémoire ; la page la demande toutes les
+      20 s et compte aussitôt un message reçu. Calcul dans `view.js` (`hasLeft`,
+      `convoOver`), testé.
+- [x] Messages de canal grisés (lisibles) quand leur auteur est parti ; un message restitué de
+      l'historique dont l'auteur n'est plus vu l'est aussi.
+- [x] DM : conversation rangée dans « Ended » (pli fermé) quand le correspondant est parti
+      de sa cellule et n'a rien écrit depuis 10 min ; jamais tant qu'un message n'est pas lu,
+      ni celle qui est ouverte ; un nouveau message la ramène ; toujours lisible dans
+      l'historique.
+- [x] Effacement des DM par l'utilisateur, un message ou la conversation (local : les relais
+      gardent les enveloppes). `POST /api/dm/delete`, `Console::delete_dms`, événement `dms`.
+      IDs gardés 30 jours dans `console.sqlite` (migration `0005_dm_deleted`), comme D29 :
+      renvoyés par un relais après un redémarrage, ils restent effacés ; dans l'historique,
+      contenu effacé, ligne gardée.
 - [x] Décidé par l'utilisateur (28/10/2026) : la console qui suit une autre cellule ne quitte
       pas ses échanges en cours ; seul le départ du correspondant compte.
 
@@ -505,3 +515,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 13, 15 | D33 validée ; pas de pseudo envoyé = pas de tag `n` (validé) ; la console qui change de cellule ne quitte pas ses échanges. Écart signalé par l'utilisateur sur `anon` et le pseudo des DM : l'app garde le dernier pseudo vu par clé (cache mémoire, vidé au changement de canal), d'où un pseudo encore affiché après qu'il n'est plus envoyé, et dans les DM. |
 | 28/10/2026 | 13 | Lot 13 : champs qui gardent leur défilement, champs de message en `textarea` qui grandit (Entrée envoie, Maj+Entrée va à la ligne) ; pseudo dans `console.sqlite` (repris une fois du navigateur), case par cellule pour ne pas l'envoyer (D32), pseudo du moment pour les préenregistrés, planifiés et groupes. 2 tests Rust ajoutés (base, envoi et redémarrage), routes testées ; 14 tests `node`. Chrome headless sur le binaire réel (`u09tv` téléporté, démon Tor, graine jetable, rien envoyé) : 12 vérifications, dont un défaut trouvé et corrigé (le champ du pseudo gardait l'ancienne valeur à la reconstruction ; un champ qui montre l'état de la console ne garde que ce que l'on tape). |
 | 28/10/2026 | 14 | Lot 14 : `history.sqlite` (D31), écriture sur un fil à part, WAL, `0600` pour la base, le WAL et la mémoire partagée, recréation en marche, `since` contre le retour de messages purgés, relecture des 24 h dans le fil, `--no-history`. 3 tests (`tests/history.rs` : tout est gardé, masqués compris, DM et états ; effacement en marche ; retour dans le fil, effacés et trop anciens) et groupes dans `tests/groups.rs` ; 68 tests Rust, 14 `node` ; clippy propre avec et sans `arti`. Binaire réel par le démon Tor (`u09tv` téléporté, rien envoyé) : fichiers en `0600`, WAL, base recréée 2 s après son effacement. |
+| 28/10/2026 | 15 | Lot 15 : départ après 10 min sans présence ni message (`/api/present`, calcul dans la page), messages grisés, conversations terminées rangées, effacement des DM (un ou tous, gardés effacés après redémarrage, contenu effacé dans l'historique). Tests : effacement et redémarrage (`tests/dm.rs`), présence (`tests/local.rs`), routes, 1 test `node` ; 70 tests Rust, 15 `node` ; clippy propre. |

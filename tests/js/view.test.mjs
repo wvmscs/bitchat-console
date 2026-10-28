@@ -145,3 +145,18 @@ test("neighbours muted", () => {
   // A neighbour chosen is shown, muted or not.
   assert.deepEqual(v.feedCells(cells, "u09tv", "u09wj", true), ["u09wj"]);
 });
+
+test("someone not seen for 10 min has left; a conversation then is over", () => {
+  const { hasLeft, convoOver } = v;
+  const present = { now: 10_000, departure_secs: 600, cells: { u09tv: { aa: 9_500 } } };
+  assert.equal(hasLeft(null, "u09tv", "aa", 10_000), false, "no data yet: nobody left");
+  assert.equal(hasLeft(present, "u09tv", "aa", 10_000), false);
+  assert.equal(hasLeft(present, "u09tv", "aa", 10_200), true);
+  assert.equal(hasLeft(present, "u09tv", "bb", 10_000), true, "never seen");
+  assert.equal(hasLeft(present, "u09ty", "bb", 10_000, 9_900), false, "a private message counts");
+  const convo = (unread, at) => ({ peer: "bb", cell: "u09ty", unread,
+    messages: [{ own: false, created_at: at }, { own: true, created_at: 9_990 }] });
+  assert.equal(convoOver(convo(0, 9_000), present, 10_000), true, "my own messages do not count");
+  assert.equal(convoOver(convo(1, 9_000), present, 10_000), false, "unread: kept");
+  assert.equal(convoOver(convo(0, 9_800), present, 10_000), false);
+});

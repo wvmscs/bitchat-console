@@ -47,6 +47,7 @@ enum Op {
     },
     DmStatus(String, DmStatus),
     DmRead(Vec<String>),
+    DmDeleted(Vec<String>),
     Group(GroupChat),
     Recent {
         cell: String,
@@ -102,6 +103,13 @@ impl History {
     pub fn dm_read(&self, ids: &[String]) {
         if !ids.is_empty() {
             self.send(Op::DmRead(ids.to_vec()));
+        }
+    }
+
+    /// Private messages the user deleted: their content goes, the row stays.
+    pub fn dm_deleted(&self, ids: &[String]) {
+        if !ids.is_empty() {
+            self.send(Op::DmDeleted(ids.to_vec()));
         }
     }
 
@@ -263,6 +271,18 @@ impl Base {
                         .execute(
                             "UPDATE message SET status = 'read' WHERE kind = 'dm' AND own = 0 AND msg_id = ?1",
                             params![id],
+                        )
+                        .map_err(sql)?;
+                }
+                Ok(())
+            }
+            Op::DmDeleted(ids) => {
+                for id in ids {
+                    self.conn
+                        .execute(
+                            "UPDATE message SET content = NULL, deleted_at = ?2 \
+                             WHERE kind = 'dm' AND msg_id = ?1 AND deleted_at IS NULL",
+                            params![id, now],
                         )
                         .map_err(sql)?;
                 }

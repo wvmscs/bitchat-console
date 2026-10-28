@@ -144,6 +144,7 @@ pub(crate) async fn events(State(s): State<AppState>) -> Response {
                     ("participants", json!({ "cell": cell, "count": count }))
                 }
                 Ok(ConsoleEvent::Dm(dm)) => ("dm", json!(dm)),
+                Ok(ConsoleEvent::Dms) => ("dms", json!(console.dms().await.ok()?)),
                 Ok(ConsoleEvent::DmStatus { id, status }) => {
                     ("dm_status", json!({ "id": id, "status": status }))
                 }
@@ -218,6 +219,30 @@ pub(crate) async fn dm(
     Ok(Json(json!(
         s.console.send_dm(&b.peer, &b.cell, &b.text).await?
     )))
+}
+
+/// `GET /api/present`: when each key was last seen in each cell, and after
+/// how long it has left (lot 15).
+pub(crate) async fn present(State(s): State<AppState>) -> Result<Json<Value>, ApiError> {
+    Ok(Json(json!(s.console.presence().await?)))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DeleteDmsBody {
+    peer: String,
+    cell: String,
+    /// None: the whole conversation.
+    ids: Option<Vec<String>>,
+}
+
+/// `POST /api/dm/delete {"peer", "cell", "ids"?}`: locally (lot 15).
+pub(crate) async fn delete_dms(
+    State(s): State<AppState>,
+    body: Result<Json<DeleteDmsBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    let n = s.console.delete_dms(&b.peer, &b.cell, b.ids).await?;
+    Ok(Json(json!({ "deleted": n })))
 }
 
 #[derive(Deserialize)]

@@ -1,6 +1,6 @@
 //! Local storage (lot 8, D16): SQLite in the data directory, for what the
 //! user decides only: muted keys, saved messages, schedules, groups, the IDs
-//! of the private messages read (D29), the user's own nickname and the cells
+//! of the private messages read (D29) or deleted, the user's own nickname and the cells
 //! where it is not sent (D32). Never received contents, nicknames or the keys
 //! of others, mutes aside (D11, D25). Append-only numbered migrations, as in
 //! bitchat-geohash.
@@ -19,6 +19,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0004_nickname",
         include_str!("migrations/0004_nickname.sql"),
+    ),
+    (
+        "0005_dm_deleted",
+        include_str!("migrations/0005_dm_deleted.sql"),
     ),
 ];
 
@@ -314,10 +318,40 @@ impl Db {
             .map_err(sql)
     }
 
-    /// Forgets what was read before `before`.
+    /// Forgets what was read before `before`, and what was deleted.
     pub fn purge_read(&self, before: i64) -> Result<usize> {
-        self.conn
+        let n = self
+            .conn
             .execute("DELETE FROM dm_read WHERE at < ?1", params![before])
+            .map_err(sql)?;
+        self.conn
+            .execute("DELETE FROM dm_deleted WHERE at < ?1", params![before])
+            .map_err(sql)?;
+        Ok(n)
+    }
+
+    /// Remembers private messages the user deleted (lot 15).
+    pub fn set_deleted(&self, ids: &[String], at: i64) -> Result<()> {
+        for id in ids {
+            self.conn
+                .execute(
+                    "INSERT OR IGNORE INTO dm_deleted (id, at) VALUES (?1, ?2)",
+                    params![id, at],
+                )
+                .map_err(sql)?;
+        }
+        Ok(())
+    }
+
+    pub fn is_deleted(&self, id: &str) -> Result<bool> {
+        self.conn
+            .query_row(
+                "SELECT 1 FROM dm_deleted WHERE id = ?1",
+                params![id],
+                |_| Ok(()),
+            )
+            .optional()
+            .map(|r| r.is_some())
             .map_err(sql)
     }
 }
@@ -406,6 +440,10 @@ mod tests {
         // Kept from the first time.
         assert_eq!(db.purge_read(101).unwrap(), 2);
         assert!(!db.is_read("a").unwrap());
+        db.set_deleted(&["c".into()], 100).unwrap();
+        assert!(db.is_deleted("c").unwrap() && !db.is_deleted("a").unwrap());
+        db.purge_read(101).unwrap();
+        assert!(!db.is_deleted("c").unwrap());
     }
 
     #[test]
