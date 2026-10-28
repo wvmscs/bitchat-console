@@ -40,6 +40,23 @@ cargo run --release --features arti -- u09tv --map http://127.0.0.1:8080 --open
 Run the binary with a wrong option to list them all (`--teleport`, `--tor-socks`, `--apps`,
 `--dm-relays`, `--no-presence`, `--pow-bits`, `--listen`, TLS…).
 
+## History
+
+Every message is kept in `~/.bitchat-console/history.sqlite` (`--no-history`: none). The page
+`history?cell=…` ("history ↗" in the top bar) searches, sorts and deletes; `bitchat-history`
+does the same from the command line, the console running or not, and backs up, rotates and
+wipes:
+
+```sh
+cargo install --path . --features arti    # installs bitchat-console and bitchat-history
+bitchat-history query --cell u09tv --from 1h
+bitchat-history cron                       # the crontab line for the daily rotation:
+                                           # backup, keep the last 2 h, compact
+```
+
+A deleted or edited message leaves (or changes in) the console's feed within 2 s, whoever did
+it. `skills/bitchat-history/SKILL.md` describes the base, the tool and the API for a local AI.
+
 ## Privacy
 
 Every message, received or sent (channels, private messages, groups, muted keys included), is

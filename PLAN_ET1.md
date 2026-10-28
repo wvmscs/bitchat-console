@@ -23,7 +23,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 14 | Base d'historique `history.sqlite` (D31) : schéma, écriture, droits, recréation | ✅ |
 | 15 | Critère de départ (10 min) : messages grisés, DM cachés, effacement des DM | ✅ |
 | 16 | Onglet d'historique : recherche, tri, sélection, effacement ; modifications externes en direct | ✅ |
-| 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ⏳ |
+| 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ✅ |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
 8 dépend de 5 et 7 ; 9 dépend de 7 ; 10 dépend de 6 ; 11 dépend de 2 ; 12 clôt l'étape.
@@ -441,16 +441,30 @@ Demandé dans [EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) (28/10/2026).
       rotation) restent dans le fil : c'est du travail d'archive. Au retour d'une zone, les
       messages effacés dans la base sont tenus pour vus (un relais ne les ramène pas).
 
-### Lot 17 : API, outil batch, `SKILL.md` ☐
+### Lot 17 : API, outil batch, `SKILL.md` ✅
 
 - [x] API CRUD HTTP de la console, gardée comme les autres par Host et Origin (faite avec
       le lot 16) : `GET /api/history` (filtres de la page), `GET /api/history/{id}`,
       `POST /api/history/insert` (ligne remise d'une archive), `/update` (contenu),
       `/delete` (contenu effacé, ligne gardée) ; `409 no_history` avec `--no-history`.
-- [ ] Outil `bitchat-history` sur la même base, console arrêtée ou non : requêtes, suppression
-      d'enregistrements, sauvegarde, rotation, effacement complet (D33).
-- [ ] Entrée cron (ou launchd) documentée : sauvegarde, compactage et rotation chaque jour.
-- [ ] `SKILL.md` pour l'API et l'outil (IA locale).
+- [x] Outil `bitchat-history` (second binaire de la crate, `src/bin/bitchat-history.rs`,
+      `default-run` pour la console) sur la même base, console arrêtée ou non : `query` (JSON
+      par ligne, filtres de l'API, âges `30m`, `2h`, `7d`), `get`, `insert` (lignes JSON sur
+      l'entrée), `update`, `delete` (contenu effacé, la console le cache), `remove` et `purge`
+      (lignes supprimées tout court), `backup` (`VACUUM INTO`, `0600`), `rotate` (D33),
+      `wipe`, `cron`. Codes de sortie 0, 1, 2.
+- [x] Rotation (D33) : copie de toute la base dans `<data-dir>/backups/` (nom libre, même à
+      la seconde près), suppression de ce qui a plus de 2 h, début de la base déplacé là
+      **sans jamais reculer** (après un effacement complet, ce qui précédait reste dehors),
+      `VACUUM`. Défauts trouvés en essai : deux copies dans la même seconde ; une rotation
+      faisait reculer `since` (corrigé, testé).
+- [x] Entrée cron : `bitchat-history cron [--at 04:17]` affiche la ligne (rotation
+      quotidienne, journal `<data-dir>/rotate.log`) ; README.
+- [x] `skills/bitchat-history/SKILL.md` pour l'outil, l'API et le schéma (IA locale) : règles
+      (local seulement, `delete`/`update` plutôt qu'à la main, `remove`/`purge` = archives,
+      ne pas toucher `since` ni les droits, demander avant les opérations destructrices).
+- [x] bitchat-web : `bitchat-history` dans les paquets (signé comme les autres) dès que le
+      commit de la console l'a.
 
 ## Décisions
 
@@ -530,3 +544,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 14 | Lot 14 : `history.sqlite` (D31), écriture sur un fil à part, WAL, `0600` pour la base, le WAL et la mémoire partagée, recréation en marche, `since` contre le retour de messages purgés, relecture des 24 h dans le fil, `--no-history`. 3 tests (`tests/history.rs` : tout est gardé, masqués compris, DM et états ; effacement en marche ; retour dans le fil, effacés et trop anciens) et groupes dans `tests/groups.rs` ; 68 tests Rust, 14 `node` ; clippy propre avec et sans `arti`. Binaire réel par le démon Tor (`u09tv` téléporté, rien envoyé) : fichiers en `0600`, WAL, base recréée 2 s après son effacement. |
 | 28/10/2026 | 15 | Lot 15 : départ après 10 min sans présence ni message (`/api/present`, calcul dans la page), messages grisés, conversations terminées rangées, effacement des DM (un ou tous, gardés effacés après redémarrage, contenu effacé dans l'historique). Tests : effacement et redémarrage (`tests/dm.rs`), présence (`tests/local.rs`), routes, 1 test `node` ; 70 tests Rust, 15 `node` ; clippy propre. |
 | 28/10/2026 | 16 | Lot 16 : onglet d'historique (filtres, tri, sélection, effacement, en direct), changements faits ailleurs repris dans le fil (trigger, `data_version`), API CRUD HTTP de l'historique. Module `history` restructuré autour de `HistoryFile` (partagé avec l'outil du lot 17). Défaut trouvé dans Chrome : la recherche « NUMÉRO » ne trouvait pas « numéro » (`LIKE` ne replie que l'ASCII) → fonction `contains_folded`. 74 tests Rust, 15 `node` ; clippy propre avec et sans `arti` ; Chrome headless sur le binaire réel : lien, filtres, recherche, effacement, effacés, modification externe visible en direct. |
+| 28/10/2026 | 17 | Lot 17 : outil `bitchat-history` (requêtes, édition, effacement, sauvegarde, rotation D33, effacement complet, ligne cron), `SKILL.md`, README. Essai réel : rotation pendant que la console tourne, écriture juste après, aucune erreur. Deux défauts trouvés et corrigés (noms de copie à la seconde près, `since` qui reculait). 76 tests Rust, 15 `node` ; clippy propre avec et sans `arti`. |

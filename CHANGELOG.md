@@ -14,6 +14,8 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- `bitchat-history` (lot 17), the history from the command line, the console running or not: `query` (JSON lines, the API's filters, ages like `2h`), `get`, `insert` (JSON lines on stdin), `update`, `delete` (content removed, hidden by the console), `remove` and `purge` (rows removed outright), `backup` (`VACUUM INTO`, `0600`), `rotate` (D33: copy into `<data-dir>/backups/`, keep the last 2 h, the start of the base moved there but never back, compact), `wipe`, `cron` (the crontab line). `cargo install` installs it with the console.
+- `skills/bitchat-history/SKILL.md`: the base, the tool and the API, with rules, for a local AI.
 - History page (lot 16): `history?cell=…`, opened in a new tab from the top bar ("history ↗", for the cell shown) or from the ended conversations: filters (cell or prefix, kind, text or nickname in any case, key, dates, deleted rows), order (newest, oldest, by sender), selection and deletion, live. Filters stay in the address.
 - Changes made to the history by another process (a cron, a local AI, any SQLite client) reach the feed within 2 s (lot 16): a deleted message leaves it, an edited one shows its new content, a private message deleted elsewhere stays deleted after a restart. A trigger notes them in `change` (history migration `0002_changes`); live event `history`.
 - History API (lots 16 and 17): `GET /api/history` (the page's filters), `GET /api/history/{id}`, `POST /api/history/insert`, `/update`, `/delete` (content removed, row kept); `409 no_history` with `--no-history`. `history::HistoryFile`, `Query`, `Record`.

@@ -730,16 +730,18 @@ impl HistoryFile {
 
     /// The daily rotation (D33): the whole base copied into `archive_dir`,
     /// then only the last `keep_secs` kept, the start of the base moved
-    /// there (relays cannot bring older messages back), and the file
-    /// compacted.
+    /// there (never back: relays cannot bring older messages back), and the
+    /// file compacted.
     pub fn rotate(&self, keep_secs: i64, archive_dir: &Path) -> Result<Rotation> {
         let now = unix_now();
-        let archive = archive_dir.join(format!("history-{}.sqlite", utc_stamp(now)));
+        let archive = archive_path(archive_dir, now);
         self.backup(&archive)?;
-        let since = now - keep_secs.max(0);
+        let cut = now - keep_secs.max(0);
+        // The start never goes back: what a wipe or a purge removed stays out.
+        let since = cut.max(self.since()?);
         let tx = self.conn.unchecked_transaction().map_err(sql)?;
         let removed = tx
-            .execute("DELETE FROM message WHERE created_at < ?1", params![since])
+            .execute("DELETE FROM message WHERE created_at < ?1", params![cut])
             .map_err(sql)?;
         tx.execute(
             "UPDATE meta SET value = ?1 WHERE key = 'since'",
@@ -801,6 +803,19 @@ impl HistoryFile {
             })
             .collect())
     }
+}
+
+/// A free name for a copy made at `t` in `dir`:
+/// `history-20261028-214700.sqlite`, then `-2`, `-3`… within the same second.
+pub fn archive_path(dir: &Path, t: i64) -> PathBuf {
+    let stamp = utc_stamp(t);
+    let mut p = dir.join(format!("history-{stamp}.sqlite"));
+    let mut n = 1;
+    while p.exists() {
+        n += 1;
+        p = dir.join(format!("history-{stamp}-{n}.sqlite"));
+    }
+    p
 }
 
 /// Deletes the history (the console makes a new one within seconds).
