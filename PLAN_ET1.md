@@ -9,7 +9,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 0 | Mise en place : dépôts, crates, dépendances, `AGENTS.md` | ✅ |
 | 1 | Crate commune `geohash-relays` : listes, règles iOS et Android, voisins, interface de stratégie | ✅ |
 | 2 | Connecteur Tor (SOCKS5, isolation par geohash), refus du clair | ✅ |
-| 3 | Identités : graine, clé par geohash, identité Noise | ⬜ |
+| 3 | Identités : graine, clé par geohash, identité Noise | ✅ |
 | 4 | Lecture : 9 cellules, connexions, abonnements, fil, changement de geohash à chaud | ⬜ |
 | 5 | Écriture : messages, preuve de travail, présences, marque `teleport` | ⬜ |
 | 6 | Messages privés (enveloppe BitChat `v2:`, relais par défaut) | ⬜ |
@@ -73,15 +73,19 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       résolu, cible refusée expliquée, absence de proxy ou serveur non SOCKS → erreur,
       bouclage seul.
 
-### Lot 3 : identités ⬜
+### Lot 3 : identités ✅
 
-- [ ] Graine de 32 octets, fichier `0600` dans le dossier de données (refus d'un fichier
-      lisible par d'autres).
-- [ ] Clé par geohash : `HMAC-SHA256(graine, geohash ‖ compteur big-endian)`, compteur 0 à 9
-      jusqu'à une clé secp256k1 valide (`NostrIdentityBridge.deriveIdentity`). Vecteurs de
-      test ; vérification croisée avec le code Swift.
-- [ ] Identité Noise de la console (clé statique X25519, clé de signature Ed25519, empreinte)
-      pour les groupes (lot 10).
+- [x] Graine de 32 octets (`seed.key`) et identité Noise (`noise.key` : clé statique X25519
+      puis clé de signature Ed25519) dans le dossier de données, créé en `0700`, fichiers en
+      `0600` ; un fichier lisible par d'autres (`Error::InsecureKeyFile`) ou de mauvaise
+      taille (`Error::BadKeyFile`) est refusé. Rien n'est jamais journalisé.
+- [x] Clé par geohash : `HMAC-SHA256(graine, geohash ‖ compteur big-endian)`, compteur 0 à 9
+      jusqu'à une clé secp256k1 valide, clé publique x-only (`CellKey`, suffixe `#abcd`).
+      **Vérifiée contre CryptoKit** (script `tests/vectors/identity.swift`, vecteurs sur
+      `u09tv`, `u09tvw`, `9q8yy`).
+- [x] Identité Noise : empreinte = SHA-256 de la clé statique (`getIdentityFingerprint`),
+      identifiant de pair = 16 premiers caractères (`PeerID(publicKey:)`), clé de signature
+      Ed25519 ; mêmes résultats que CryptoKit.
 
 ### Lot 4 : lecture ⬜
 
@@ -184,3 +188,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 0 | Lot 0 commité dans les deux dépôts (`977e4cd` console, `4861316` geohash-relays) et poussé. L'utilisateur laisse l'agent poursuivre seul (un commit par lot, CHANGELOG, décisions tracées) ; relais `relay.famillevital.club` autorisé pour tous les tests. |
 | 28/10/2026 | 1 | `geohash-relays` : listes, sélection (portées de bitchat-geohash sans réseau), module `geohash` maison (D19), `Strategy`/`AppStrategy`, README. 24 tests (17 de sélection repris tels quels), clippy et rustdoc propres. Commité `55f63cd`. |
 | 28/10/2026 | 2 | Connecteur : trait `Connector`, `Socks5` (isolation par identifiant, D20), `Loopback` (tests seulement), `Error::TorUnavailable`. 7 tests (proxy SOCKS5 de test). `tor` n'est pas installé sur la machine : essai réel avec Tor reporté au lot 11 (Arti, sans rien installer) ou à l'utilisateur. |
+| 28/10/2026 | 3 | Module `identity` (graine, `CellKey`, `NoiseIdentity`, `Keys`), dépendances `k256`, `sha2`, `hmac`, `rand_core`, `x25519-dalek`, `ed25519-dalek` (D15). Vecteurs CryptoKit identiques. `geohash-relays` en dépendance git (SSH, `git-fetch-with-cli`), verrouillée sur `55f63cd`. 13 tests. |

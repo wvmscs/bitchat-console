@@ -1,0 +1,4 @@
+# geohash-relays and bitchat-geohash are private GitHub repositories: fetch
+# them with the git command line, which uses the user's SSH setup.
+[net]
+git-fetch-with-cli = true
