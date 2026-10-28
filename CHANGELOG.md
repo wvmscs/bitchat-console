@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-29
+
 ### Fixed
 - Page: a field no longer jumps back to its start when a live event rebuilds its section: fields keep their scroll (the text typed at the end of a long line went out of view).
 - Over the map: the map's level follows the console's cell (its `#level=`), so the level chooser no longer stays on another level after a selection or an area change.
