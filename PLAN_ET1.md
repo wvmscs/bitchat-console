@@ -7,7 +7,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | Lot | Contenu | État |
 |---|---|---|
 | 0 | Mise en place : dépôts, crates, dépendances, `AGENTS.md` | ✅ |
-| 1 | Crate commune `geohash-relays` : listes, règles iOS et Android, voisins, interface de stratégie | ⬜ |
+| 1 | Crate commune `geohash-relays` : listes, règles iOS et Android, voisins, interface de stratégie | ✅ |
 | 2 | Connecteur Tor (SOCKS5, isolation par geohash), refus du clair | ⬜ |
 | 3 | Identités : graine, clé par geohash, identité Noise | ⬜ |
 | 4 | Lecture : 9 cellules, connexions, abonnements, fil, changement de geohash à chaud | ⬜ |
@@ -39,16 +39,23 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       personnelles hors mémoire, publication réelle seulement sur action de l'utilisateur),
       commandes ; `AGENTS.md` de `geohash-relays`.
 
-### Lot 1 : crate `geohash-relays` ⬜
+### Lot 1 : crate `geohash-relays` ✅
 
-- [ ] Lecture des listes iOS et Android (règles de chaque app, corrections du lot 11 bis de
-      bitchat-geohash), conflit d'hôte iOS (D18 de bitchat-geohash).
-- [ ] Stratégie `AS` : sélection de chaque app et union par serveur, derrière un trait
-      `Strategy` (place prévue pour A0 à A6).
-- [ ] Voisins d'un geohash (8, moins aux bords).
-- [ ] Tests sur les listes figées de bitchat-geohash (mêmes résultats sur `u09tv`, `u0`,
-      `9q8yy`, `gcpvj`, `u1`, `gb`, `9q`).
-- [ ] Documentation pensée pour une PR future vers les apps : règle de chaque app, sources.
+- [x] Lecture des listes iOS et Android (règles de chaque app, corrections du lot 11 bis de
+      bitchat-geohash), conflit d'hôte iOS ; URL des listes et relais par défaut des apps
+      (`Platform::list_url`, `Platform::default_relays`). Le téléchargement reste chez
+      l'appelant (crate sans réseau).
+- [x] Stratégie `AS` (`AppStrategy`, apps : les deux, iOS seul, Android seul) derrière le
+      trait `Strategy` (`read`, `write` ; place prévue pour A0 à A6).
+- [x] Voisins d'un geohash comme iOS (`Geohash.neighbors(of:)`) : centre ± une cellule,
+      longitude qui boucle, rien au-delà des pôles (5 voisins sur les bords) ;
+      `with_neighbours` donne les 9 cellules. Module `geohash` sans dépendance (D19).
+- [x] Tests sur les listes figées de bitchat-geohash : les 17 tests de sélection repris tels
+      quels passent (mêmes choix sur `u09tv`, `u0`, `9q8yy`, `gcpvj`, `u1`, `gb`, `9q`) ;
+      voisins contrôlés avec la crate `geohash` 0.13 (sauf aux pôles, où elle fait boucler la
+      latitude et pas l'app).
+- [x] `README.md` pensé pour une PR vers les apps : règle de chaque app, fichier et fonction
+      sources.
 
 ### Lot 2 : connecteur Tor ⬜
 
@@ -146,6 +153,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D15 | Dépendances | Comme bitchat-geohash (`tokio`, `tokio-tungstenite`, `k256`, `sha2`, `serde`, `axum`, `rusqlite`…) plus `hmac`, `hkdf`, `chacha20poly1305` (XChaCha20 et ChaCha20), `ed25519-dalek`, `x25519-dalek`, `rand` ; `arti-client` en feature (lot 11) | ✅ |
 | D16 | Stockage local | Messages reçus et émis : tampon en mémoire par cellule, borné (nombre et durée), perdu à l'arrêt ; historique local en option (SQLite, conservation limitée, purge) ; mutes, préenregistrés, groupes : SQLite. Interface `MessageStore` isolée (Redis branchable plus tard si plusieurs processus doivent partager le fil). Redis écarté pour l'étape 1 : démon de plus, persistance disque par défaut contraire à D11, lisible par tout processus local | ✅ |
 | D18 | Licence de `geohash-relays` | Unlicense (domaine public), comme l'app iOS ; compatible avec la GPL-3.0 de l'app Android, donc proposable aux deux | ✅ |
+| D19 | Calcul des geohash dans `geohash-relays` | Module maison sans dépendance (décodage, encodage, voisins), aligné sur `Geohash.swift` d'iOS plutôt que sur la crate `geohash` (qui fait boucler la latitude aux pôles) : crate facile à transposer dans les apps — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -166,3 +174,5 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | — | D15 (dépendances) et D17 (neutralité) validées ; D16 (stockage) en discussion : question Redis. |
 | 28/10/2026 | — | D16 validée (mémoire bornée + SQLite, pas de Redis à l'étape 1). Lot 0 lancé. |
 | 28/10/2026 | 0 | D18 : `geohash-relays` sous Unlicense (iOS : Unlicense, Android : GPL-3.0). Crates `bitchat-console` et `geohash-relays` créées (squelettes, `[workspace]` propre, fmt, clippy et tests verts), dépôts git locaux, dépôts GitHub privés créés et reliés (`origin`), rien de poussé. |
+| 28/10/2026 | 0 | Lot 0 commité dans les deux dépôts (`977e4cd` console, `4861316` geohash-relays) et poussé. L'utilisateur laisse l'agent poursuivre seul (un commit par lot, CHANGELOG, décisions tracées) ; relais `relay.famillevital.club` autorisé pour tous les tests. |
+| 28/10/2026 | 1 | `geohash-relays` : listes, sélection (portées de bitchat-geohash sans réseau), module `geohash` maison (D19), `Strategy`/`AppStrategy`, README. 24 tests (17 de sélection repris tels quels), clippy et rustdoc propres. Commité `55f63cd`. |
