@@ -185,3 +185,9 @@ export function freeRoom(width, height, panel, mapPanel = null, margin = 20) {
     ? { topLeft: [panel.right + margin, margin], bottomRight: [right, margin] }
     : { topLeft: [margin, margin], bottomRight: [margin, height - panel.top + margin] };
 }
+
+// The area the map watches for a console that follows `center`: its parent
+// (u09tv -> u09t), but never shorter than a channel of level 2.
+export function mapArea(center) {
+  return center.length > 2 ? center.slice(0, -1) : center;
+}

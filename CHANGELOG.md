@@ -11,6 +11,7 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- Over the map: when the console's cell changes, the map watches the area around it (its parent, `u09tv` → `u09t`) with all its functions, through `POST /api/area` of bitchat-geohash 0.2.0 (D30); then the console's cells are framed again. The panel's title says when the map moves, or why it could not (an older map answers 404).
 - Over the map: choosing a cell in the console (or "all 9 cells") outlines it on the map of bitchat-geohash and fits the map to it, in the room left between the console's panel and the map's own (unless folded). The console tells the map by `postMessage`; `hook.js`, injected as a classic script before the map's module, keeps the Leaflet map (bitchat-geohash unchanged). The first view only outlines, the map keeps its own.
 - Page: a correspondent's nickname in private messages (conversations, conversation title) and in the people of a cell, when known: the last one they used in a channel message the console received (private messages and presences carry none).
 - Read private messages stay read after a restart (D29): their IDs (random UUIDs, nothing else) in `dm_read` (migration `0003_read`), forgotten after 30 days; no second read receipt.

@@ -4,7 +4,7 @@
 // cells the console shows are outlined on the map, which fits them into the
 // room the panel leaves.
 
-import { bbox, freeRoom } from "/console/assets/view.js";
+import { bbox, freeRoom, mapArea } from "/console/assets/view.js";
 
 const box = document.createElement("div");
 box.id = "bc-console";
@@ -90,7 +90,35 @@ function showView(v) {
   });
 }
 
+// The map watches the area around the console's cell (its parent): when
+// the console moves, the map moves with it, with all its own functions
+// (bitchat-geohash `POST /api/area`, lot 19). Then the console's cells are
+// framed again, after the map's own framing of its new area.
+let synced = null;
+
+async function followArea(v) {
+  const area = mapArea(v.center);
+  if (area === synced) return;
+  synced = area;
+  title.textContent = `BitChat console · map → #${area}…`;
+  const r = await fetch("/api/area", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ geohash: area }),
+  }).catch(() => null);
+  let note = "";
+  if (!r || !r.ok) {
+    synced = null;
+    try { note = ` · map: ${(await r.json()).message}`; } catch { note = " · map unreachable"; }
+  }
+  title.textContent = "BitChat console" + note;
+  if (r && r.ok) setTimeout(() => showView({ ...v, fit: true }), 1500);
+}
+
 window.addEventListener("message", e => {
   if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
-  if (e.data && e.data.type === "bitchat-console:view") showView(e.data);
+  if (e.data && e.data.type === "bitchat-console:view") {
+    showView(e.data);
+    followArea(e.data);
+  }
 });

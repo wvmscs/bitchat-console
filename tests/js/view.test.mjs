@@ -131,3 +131,9 @@ test("room beside the panel", () => {
   assert.deepEqual(v.freeRoom(1400, 900, { right: 530, top: 260 }, { left: 1030, top: 10, bottom: 60 }),
     { topLeft: [550, 20], bottomRight: [20, 20] });
 });
+
+test("the map's area for the console's cell", () => {
+  assert.equal(v.mapArea("u09tv"), "u09t");
+  assert.equal(v.mapArea("u09tvw"), "u09tv");
+  assert.equal(v.mapArea("u0"), "u0");
+});
