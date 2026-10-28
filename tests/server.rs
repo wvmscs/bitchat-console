@@ -121,6 +121,18 @@ async fn page_and_state() {
         test_seed().cell("u09tv").unwrap().pubkey_hex()
     );
     assert!(v["messages"]["u09ty"].as_array().unwrap().is_empty());
+    // The participants of a cell, on demand.
+    let (status, body) = http(
+        r.addr,
+        "GET",
+        "/api/participants?cell=u09tv",
+        &[r.host()],
+        "",
+    )
+    .await;
+    assert_eq!((status, body.as_str()), (200, "[]"));
+    let (status, _) = http(r.addr, "GET", "/api/participants", &[r.host()], "").await;
+    assert_eq!(status, 400);
 }
 
 #[tokio::test]

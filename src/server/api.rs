@@ -8,8 +8,8 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use axum::Json;
-use axum::extract::State;
 use axum::extract::rejection::JsonRejection;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -94,6 +94,20 @@ async fn snapshot(console: &Console) -> Result<Value, Error> {
 /// `GET /api/state`.
 pub(crate) async fn state(State(s): State<AppState>) -> Result<Json<Value>, ApiError> {
     Ok(Json(snapshot(&s.console).await?))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct CellQuery {
+    cell: String,
+}
+
+/// `GET /api/participants?cell=u09tv`: who was seen there within the
+/// window, the most recent first.
+pub(crate) async fn participants(
+    State(s): State<AppState>,
+    Query(q): Query<CellQuery>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(json!(s.console.participants(&q.cell).await?)))
 }
 
 fn sse(name: &str, data: &Value) -> Result<SseEvent, Infallible> {

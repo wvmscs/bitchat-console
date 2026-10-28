@@ -10,6 +10,7 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- Page: the console's own key in each cell ("you #376d"), and the people of the current cell (the one shown alone, else the centre): nickname, teleported, messages, last seen; a name opens a private conversation, 🔇 mutes. `Console::participants`, `GET /api/participants?cell=…` (memory only, like the rest).
 - `tests/real_tor.rs` can run through a Tor daemon (`BITCHAT_TOR_SOCKS=127.0.0.1:9050`), without the `arti` feature; checked for real (lot 12).
 - `README.md`; real read-only run through Tor on `u09t` (lot 12).
 - Mixed groups over Nostr (lot 10): BitChat 1.8 group state and messages byte for byte (`groups`, checked with the app's Swift code), per-group Nostr addresses, consent before joining, the app's rules (pinned creator, epochs, removal by roster), destruction; storage, API (`/api/group`) and page.

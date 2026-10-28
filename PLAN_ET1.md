@@ -324,9 +324,13 @@ Fait par l'agent, seul :
 
 À faire avec l'utilisateur :
 
-- [ ] DM entre la console et l'app iOS de l'utilisateur (dans les deux sens, accusés).
-- [ ] Message dans un vrai canal (autorisation de publier hors du relais de l'utilisateur)
-      et sa lecture par l'app ; présence vue par l'app.
+- [x] DM entre la console et l'app iOS de l'utilisateur, dans les deux sens (28/10/2026,
+      console #376d, app #e521, dans `u09tv`). Accusés « délivré » et « lu » vus de l'app : à
+      confirmer.
+- [x] Message dans un vrai canal (`u09tv`, autorisé par l'utilisateur), dans les deux sens.
+      Le premier message, envoyé avant que l'app soit dans la cellule, n'a pas été reçu :
+      normal, les messages de canal (20000) sont éphémères, les relais ne les gardent pas et
+      l'app ne s'abonne qu'à la cellule où elle est. Présence vue par l'app : à confirmer.
 - [ ] Safari.
 - [ ] Revue des décisions prises par l'agent (D19 à D27).
 
@@ -384,3 +388,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 12 | Démon `tor` : `tests/real_tor.rs` prend `BITCHAT_TOR_SOCKS` ; boucle fermée, isolation des circuits et lecture seule de `u09t` vérifiées par le démon. |
 | 28/10/2026 | 9 | Correctif trouvé avec bitchat-launcher : un flux en direct de la carte relayé sous `--map` retenait l'arrêt du serveur (Ctrl-C sans effet tant qu'un navigateur restait sur la carte) ; il se termine maintenant à l'arrêt. Test `stopping_ends_the_map_streams`. |
 | 28/10/2026 | 12 | Essai avec l'app signalé par l'utilisateur : la page reprenait le focus à chaque événement (saisie et sélection presque impossibles). Les champs gardent valeur, focus et curseur ; une section attend qu'aucun bouton ne soit tenu et qu'aucun texte n'y soit sélectionné. Vérifié dans Chrome headless (50 rendus pendant 20 s de saisie). |
+| 28/10/2026 | 12 | Essai avec l'app dans `u09tv` : messages de canal et DM dans les deux sens. Évolutions demandées : identifiant de la console dans chaque cellule, liste des participants de la cellule courante (`Console::participants`, `GET /api/participants`, pseudo, téléporté, nombre de messages, dernière activité ; en mémoire seulement), avec DM et mise en sourdine depuis la liste. |

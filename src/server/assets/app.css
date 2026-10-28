@@ -62,3 +62,7 @@ h3 { font-size: 13px; margin: 10px 0 4px; }
   main { grid-template-columns: 1fr; height: auto; }
   main > section, main > aside { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+.cell .you { color: var(--accent); }
+.people { margin-top: 10px; }
+.people h3 { margin: 6px 0 2px; }
+.people .you { color: var(--accent); margin-bottom: 4px; }

@@ -3,8 +3,8 @@
 // nicknames, relay messages) only ever go through `textContent`.
 
 import {
-  author, clock, conversations, feed, gridOrder, isImage, linkify, relayCount, repeatLabel,
-  statusMark, unixFromLocal, visible,
+  author, clock, conversations, feed, gridOrder, isImage, linkify, people, personNote, relayCount,
+  repeatLabel, statusMark, unixFromLocal, visible,
 } from "./view.js";
 
 function el(tag, cls, text) {
@@ -29,7 +29,11 @@ const state = {
   groups: { groups: [], messages: [], invitations: [] },
   group: null,          // open group id
   writeCell: null,      // cell chosen in the composer, until another is shown
+  people: { cell: null, list: [] },  // participants of the current cell
 };
+
+// The cell shown alone, else the centre.
+const currentCell = () => state.selected || (state.status && state.status.center);
 
 const saved = key => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
 const save = (key, v) => { try { localStorage.setItem(key, v); } catch { /* private window */ } };
@@ -117,6 +121,27 @@ function field(tag, key, cls) {
 /// have been replaced since.
 const live = f => document.querySelector(`[data-keep="${CSS.escape(f.dataset.keep)}"]`) || f;
 
+// --- Participants of the current cell ------------------------------------------
+
+let peopleTimer = null;
+
+// Asked again shortly after a change, and every 15 s (last seen times).
+function refreshPeople(delay = 500) {
+  clearTimeout(peopleTimer);
+  peopleTimer = setTimeout(async () => {
+    const cell = currentCell();
+    if (!cell) return;
+    try {
+      const r = await fetch("api/participants?cell=" + encodeURIComponent(cell));
+      if (r.ok && cell === currentCell()) {
+        state.people = { cell, list: await r.json() };
+        renderCells();
+      }
+    } catch { /* next time */ }
+  }, delay);
+}
+setInterval(() => refreshPeople(0), 15000);
+
 // --- Top bar ------------------------------------------------------------------
 
 const ui = {};
@@ -175,18 +200,28 @@ function drawCells(box) {
     return;
   }
   const all = el("button", "cell all" + (state.selected === null ? " on" : ""), "all 9 cells");
-  all.addEventListener("click", () => { state.selected = null; state.writeCell = null; render(); });
+  all.addEventListener("click", () => {
+    state.selected = null; state.writeCell = null; render(); refreshPeople(0);
+  });
   const grid = el("div", "grid");
   for (const c of gridOrder(s.cells)) {
     const b = el("button", "cell" + (state.selected === c.geohash ? " on" : "")
       + (c.geohash === s.center ? " center" : ""));
     const n = (state.messages[c.geohash] || []).length;
+    const me = s.keys && s.keys[c.geohash];
     b.append(el("b", null, "#" + c.geohash), el("span", "muted", ` ${c.participants} people`),
       el("span", "muted small", ` ${n} msgs · relays ${relayCount(c)}`));
-    b.addEventListener("click", () => { state.selected = c.geohash; state.writeCell = null; render(); });
+    if (me) {
+      const you = el("span", "you small", "you #" + me.slice(-4));
+      you.title = "your key in this cell: " + me;
+      b.append(you);
+    }
+    b.addEventListener("click", () => {
+      state.selected = c.geohash; state.writeCell = null; render(); refreshPeople(0);
+    });
     grid.append(b);
   }
-  box.append(all, grid);
+  box.append(all, grid, drawPeople(s));
   if (state.local.mutes.length) {
     const m = el("div", "muted-list");
     m.append(el("h3", null, "Muted"));
@@ -210,6 +245,41 @@ function drawCells(box) {
     }
     box.append(log);
   }
+}
+
+// Everyone seen in the current cell: a name opens a private conversation.
+function drawPeople(s) {
+  const cell = currentCell();
+  const me = s.keys && s.keys[cell];
+  const known = state.people.cell === cell ? state.people.list : [];
+  const list = people(known, me, state.local.mutes);
+  const box = el("div", "people");
+  box.append(el("h3", null, `In #${cell} · ${list.length} other${list.length === 1 ? "" : "s"}`));
+  if (me) {
+    const you = el("div", "you small", "you: " + author(saved("nickname"), me));
+    you.title = me;
+    box.append(you);
+  }
+  const now = Date.now() / 1000;
+  for (const p of list) {
+    const row = el("div", "row person");
+    const who = el("button", "who", author(p.nickname, p.pubkey));
+    who.title = "private message · " + p.pubkey;
+    who.addEventListener("click", () => openConvo(p.pubkey, cell));
+    row.append(who, el("span", "muted small", personNote(p, now)));
+    if (state.local.mutes.includes(p.pubkey)) {
+      row.append(el("span", "muted small", " · muted"));
+    } else {
+      const mute = el("button", "mute", "🔇");
+      mute.title = "mute: hide everything from this key";
+      mute.setAttribute("aria-label", "mute");
+      mute.addEventListener("click", () => command("api/mute", { pubkey: p.pubkey, muted: true }));
+      row.append(mute);
+    }
+    box.append(row);
+  }
+  if (!list.length) box.append(el("p", "muted small", "Nobody else seen here in the last 15 minutes."));
+  return box;
 }
 
 // --- Feed -------------------------------------------------------------------------
@@ -559,6 +629,7 @@ function onState(d) {
   state.local = d.local;
   state.groups = d.groups;
   render();
+  refreshPeople();
 }
 
 let source = null;
@@ -575,6 +646,7 @@ function connect() {
     const list = state.messages[m.cell] || (state.messages[m.cell] = []);
     if (!list.some(x => x.id === m.id)) list.push(m);
     renderCells(); renderFeed();
+    if (m.cell === currentCell()) refreshPeople();
   });
   on("delivered", d => {
     for (const list of Object.values(state.messages)) {
@@ -586,6 +658,7 @@ function connect() {
   on("participants", p => {
     const c = state.status && state.status.cells.find(x => x.geohash === p.cell);
     if (c) { c.participants = p.count; renderCells(); }
+    if (p.cell === currentCell()) refreshPeople();
   });
   on("dm", dm => {
     state.dms.push(dm);

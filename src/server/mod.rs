@@ -103,6 +103,7 @@ fn console_routes(prefix: &str) -> Router<api::AppState> {
             get(|Path(p): Path<String>| async move { serve_asset(&p) }),
         )
         .route(&p("/api/state"), get(api::state))
+        .route(&p("/api/participants"), get(api::participants))
         .route(&p("/api/events"), get(api::events))
         .route(&p("/api/area"), post(api::area))
         .route(&p("/api/send"), post(api::send))

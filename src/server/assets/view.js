@@ -81,6 +81,19 @@ export function relayCount(cell) {
   return `${up}/${cell.relays.length}`;
 }
 
+// People of a cell as listed: everyone but me, the muted after the others
+// (the server sends the most recent first).
+export function people(list, me, mutes) {
+  const others = list.filter(p => p.pubkey !== me);
+  return [...others.filter(p => !mutes.includes(p.pubkey)), ...others.filter(p => mutes.includes(p.pubkey))];
+}
+
+// "14:05 · teleported · 3 msgs", or "· presence" for someone who only showed up.
+export function personNote(p, now) {
+  return clock(p.last_seen, now) + (p.teleport ? " · teleported" : "")
+    + (p.messages ? ` · ${p.messages} msg${p.messages > 1 ? "s" : ""}` : " · presence");
+}
+
 // Messages to show: without muted keys; only one key when isolated.
 export function visible(messages, mutes, isolate) {
   if (isolate) return messages.filter(m => m.pubkey === isolate);

@@ -114,6 +114,30 @@ pub struct CellStatus {
     pub participants: usize,
 }
 
+/// Someone seen in a cell within the window (messages and presences), in
+/// memory only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Participant {
+    pub pubkey: String,
+    /// Last `n` tag seen from them.
+    pub nickname: Option<String>,
+    /// Last seen (`created_at`, never in the future).
+    pub last_seen: i64,
+    /// Their last event was tagged `t=teleport`.
+    pub teleport: bool,
+    /// Channel messages seen from them in the window.
+    pub messages: u32,
+}
+
+/// What is kept of a key in a cell.
+#[derive(Debug, Clone, Default)]
+struct Known {
+    last: i64,
+    nickname: Option<String>,
+    teleport: bool,
+    messages: u32,
+}
+
 /// The followed area.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AreaStatus {
@@ -259,6 +283,7 @@ enum Command {
     Group(groups::GroupOp, oneshot::Sender<Result<()>>),
     Groups(oneshot::Sender<GroupsView>),
     Messages(String, oneshot::Sender<Vec<Message>>),
+    Participants(String, oneshot::Sender<Vec<Participant>>),
     Status(oneshot::Sender<AreaStatus>),
     Shutdown,
 }
@@ -506,6 +531,12 @@ impl Console {
         self.ask(Command::Status).await
     }
 
+    /// Who was seen in `cell` within the window, the most recent first.
+    pub async fn participants(&self, cell: &str) -> Result<Vec<Participant>> {
+        let c = cell.to_ascii_lowercase();
+        self.ask(|r| Command::Participants(c, r)).await
+    }
+
     /// Changes from now on.
     pub fn subscribe(&self) -> broadcast::Receiver<ConsoleEvent> {
         self.events.subscribe()
@@ -611,7 +642,7 @@ struct State {
     states: HashMap<(String, String), ConnState>,
     seen: Seen,
     /// cell -> key -> last seen.
-    participants: HashMap<String, HashMap<String, i64>>,
+    participants: HashMap<String, HashMap<String, Known>>,
     relay_tx: mpsc::UnboundedSender<RelayEvent>,
     events: broadcast::Sender<ConsoleEvent>,
 }
@@ -717,6 +748,9 @@ impl State {
             }
             Command::Messages(cell, reply) => {
                 let _ = reply.send(self.store.cell(&cell));
+            }
+            Command::Participants(cell, reply) => {
+                let _ = reply.send(self.participants_of(&cell, unix_now()));
             }
             Command::Status(reply) => {
                 let _ = reply.send(self.status());
@@ -1231,7 +1265,27 @@ impl State {
         let from = now - self.config.participant_window_secs;
         self.participants
             .get(cell)
-            .map_or(0, |m| m.values().filter(|&&t| t >= from).count())
+            .map_or(0, |m| m.values().filter(|s| s.last >= from).count())
+    }
+
+    fn participants_of(&self, cell: &str, now: i64) -> Vec<Participant> {
+        let from = now - self.config.participant_window_secs;
+        let mut v: Vec<Participant> = self
+            .participants
+            .get(cell)
+            .into_iter()
+            .flatten()
+            .filter(|(_, s)| s.last >= from)
+            .map(|(k, s)| Participant {
+                pubkey: k.clone(),
+                nickname: s.nickname.clone(),
+                last_seen: s.last,
+                teleport: s.teleport,
+                messages: s.messages,
+            })
+            .collect();
+        v.sort_by(|a, b| b.last_seen.cmp(&a.last_seen).then(a.pubkey.cmp(&b.pubkey)));
+        v
     }
 
     fn on_relay(&mut self, e: RelayEvent) {
@@ -1317,10 +1371,23 @@ impl State {
         let now = unix_now();
         // A date in the future is taken as now, as iOS does.
         let at = event.created_at.min(now);
+        let teleport = event.tags.iter().any(|t| {
+            t.first().map(String::as_str) == Some("t")
+                && t.get(1).map(String::as_str) == Some("teleport")
+        });
         let people = self.participants.entry(cell.clone()).or_default();
         let before = people.len();
-        let last = people.entry(event.pubkey.clone()).or_insert(at);
-        *last = (*last).max(at);
+        let seen = people.entry(event.pubkey.clone()).or_default();
+        if at >= seen.last {
+            seen.last = at;
+            seen.teleport = teleport;
+            if let Some(n) = event.tag_value("n").filter(|n| !n.is_empty()) {
+                seen.nickname = Some(n.to_owned());
+            }
+        }
+        if event.kind == KIND_MESSAGE {
+            seen.messages += 1;
+        }
         if people.len() != before {
             let count = self.participant_count(&cell, now);
             self.emit(ConsoleEvent::Participants {
@@ -1331,10 +1398,6 @@ impl State {
         if event.kind != KIND_MESSAGE {
             return;
         }
-        let teleport = event.tags.iter().any(|t| {
-            t.first().map(String::as_str) == Some("t")
-                && t.get(1).map(String::as_str) == Some("teleport")
-        });
         let message = Message {
             nickname: event.tag_value("n").map(str::to_owned),
             id: event.id,
@@ -1357,7 +1420,7 @@ impl State {
         let now = unix_now();
         let from = now - self.config.participant_window_secs;
         for people in self.participants.values_mut() {
-            people.retain(|_, t| *t >= from);
+            people.retain(|_, s| s.last >= from);
         }
         self.store.purge(now - 24 * 3600);
     }

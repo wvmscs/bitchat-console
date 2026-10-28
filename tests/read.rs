@@ -68,6 +68,26 @@ async fn the_area_is_a_cell_and_its_neighbours() {
     let s = status_until(&c, "2 participants", |s| s.cells[3].participants == 2).await;
     assert_eq!(s.cells[3].geohash, "u09ty");
     assert_eq!(c.messages("u09ty").await.unwrap().len(), 1);
+    // Who they are: nickname, teleport and messages of each key.
+    let people = c.participants("U09TY").await.unwrap();
+    assert_eq!(people.len(), 2);
+    let alice = people
+        .iter()
+        .find(|p| p.pubkey == who.public_key_hex())
+        .unwrap();
+    assert_eq!(
+        (alice.nickname.as_deref(), alice.teleport, alice.messages),
+        (Some("alice"), true, 1)
+    );
+    let quiet = people
+        .iter()
+        .find(|p| p.pubkey != who.public_key_hex())
+        .unwrap();
+    assert_eq!(
+        (quiet.nickname.as_deref(), quiet.teleport, quiet.messages),
+        (None, false, 0)
+    );
+    assert!(c.participants("u09tv").await.unwrap().is_empty());
     // The page hears about it.
     let mut got_message = false;
     while let Ok(e) = events.try_recv() {

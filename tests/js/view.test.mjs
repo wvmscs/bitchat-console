@@ -47,3 +47,17 @@ test("muted keys and isolation (lot 8)", () => {
   assert.equal(v.unixFromLocal("nonsense"), null);
   assert.ok(v.unixFromLocal("2026-10-28T10:00") > 1_800_000_000 - 1e9);
 });
+
+test("people of a cell", () => {
+  const list = [
+    { pubkey: "aa01", nickname: "bob", last_seen: 100, teleport: true, messages: 2 },
+    { pubkey: "me00", nickname: null, last_seen: 90, teleport: false, messages: 1 },
+    { pubkey: "cc03", nickname: null, last_seen: 80, teleport: false, messages: 0 },
+    { pubkey: "dd04", nickname: "eve", last_seen: 70, teleport: false, messages: 1 },
+  ];
+  assert.deepEqual(v.people(list, "me00", ["aa01"]).map(p => p.pubkey), ["cc03", "dd04", "aa01"]);
+  const now = 100;
+  assert.match(v.personNote(list[0], now), / · teleported · 2 msgs$/);
+  assert.match(v.personNote(list[3], now), /\d · 1 msg$/);
+  assert.match(v.personNote(list[2], now), / · presence$/);
+});
