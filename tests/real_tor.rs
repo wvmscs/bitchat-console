@@ -1,16 +1,18 @@
-//! Real network, through Tor (Arti), on the user's relay only
+//! Real network, through Tor, on the user's relay only
 //! (`wss://relay.famillevital.club`, authorised for tests) with throwaway
 //! seeds. Not run by default:
 //!
 //!   cargo test --features arti --test real_tor -- --ignored --nocapture
-#![cfg(feature = "arti")]
+//!   BITCHAT_TOR_SOCKS=127.0.0.1:9050 cargo test --test real_tor -- --ignored --nocapture
+//!
+//! With `BITCHAT_TOR_SOCKS`, a Tor daemon's SOCKS port is used instead of Arti.
 
 mod common;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use bitchat_console::arti::Arti;
+use bitchat_console::connector::{Connector, Socks5};
 use bitchat_console::console::{Console, ConsoleConfig};
 use bitchat_console::identity::Seed;
 use bitchat_console::lists::fetch;
@@ -33,13 +35,9 @@ async fn closed_loop_through_tor() {
         .with_max_level(tracing::Level::INFO)
         .with_test_writer()
         .try_init();
-    let dir = std::env::temp_dir().join("bitchat-console-arti-test");
     let started = Instant::now();
-    let tor = Arc::new(Arti::bootstrap(&dir).await.unwrap());
-    println!(
-        "tor bootstrapped in {:.1} s",
-        started.elapsed().as_secs_f64()
-    );
+    let tor = tor().await;
+    println!("tor ready in {:.1} s", started.elapsed().as_secs_f64());
 
     // The official iOS list, through Tor.
     let t = Instant::now();
@@ -241,6 +239,31 @@ async fn closed_loop_through_tor() {
     writer.group(GroupOp::Destroy { group: gid }).await.unwrap();
     writer.shutdown().await;
     reader.shutdown().await;
+}
+
+/// A Tor daemon if `BITCHAT_TOR_SOCKS` names its SOCKS port, else Arti.
+async fn tor() -> Arc<dyn Connector> {
+    if let Ok(addr) = std::env::var("BITCHAT_TOR_SOCKS") {
+        let s = Socks5::new(addr.parse().expect("BITCHAT_TOR_SOCKS: address:port"));
+        s.check()
+            .await
+            .expect("no SOCKS proxy at BITCHAT_TOR_SOCKS");
+        println!("tor daemon at {addr}");
+        return Arc::new(s);
+    }
+    arti().await
+}
+
+#[cfg(feature = "arti")]
+async fn arti() -> Arc<dyn Connector> {
+    let dir = std::env::temp_dir().join("bitchat-console-arti-test");
+    println!("arti");
+    Arc::new(bitchat_console::arti::Arti::bootstrap(&dir).await.unwrap())
+}
+
+#[cfg(not(feature = "arti"))]
+async fn arti() -> Arc<dyn Connector> {
+    panic!("set BITCHAT_TOR_SOCKS, or build with --features arti")
 }
 
 /// The reader's key in `u09tvw`: it sends a message there, whose author is it.

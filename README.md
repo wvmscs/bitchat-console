@@ -21,6 +21,9 @@ neighbours, write there, talk in private and in groups, from the browser, throug
 
 ## Run
 
+Tor comes from the binary (`--features arti`) or from a Tor daemon (`brew install tor`, then
+`tor` or `brew services start tor`; its default SOCKS port, 127.0.0.1:9050, needs no setting).
+
 ```sh
 cargo run --release --features arti -- u09tv --open
 ```
@@ -48,6 +51,7 @@ never loaded. With `--map`, the map tiles are loaded by the browser directly, no
 cargo test                                   # offline: local relays, local SOCKS proxy
 node --test tests/js/                        # page helpers
 cargo test --release --features arti --test real_tor -- --ignored --nocapture   # real, through Tor
+BITCHAT_TOR_SOCKS=127.0.0.1:9050 cargo test --release --test real_tor -- --ignored --nocapture  # same, Tor daemon
 ```
 
 The real test publishes only on the relay named in it, with throwaway keys.

@@ -313,13 +313,21 @@ Fait par l'agent, seul :
       relais que bitchat-geohash classe aussi morts ou injoignables
       (`relay.cypherflow.ai`, `relay.sovereignresonance.org`, `treuzkas.branruz.com`) ;
       95 à 109 participants comptés ; aucun message à cette heure ; aucun avertissement.
+- [x] **Démon `tor`** (Homebrew, installé par l'utilisateur, 28/10/2026 matin) :
+      - boucle fermée par `--tor-socks 127.0.0.1:9050` (`BITCHAT_TOR_SOCKS`) : 18 connexions
+        en 2,6 s, message vu en 0,37 s, DM reçu en 0,57 s et « délivré » à 0,94 s, groupe
+        rejoint en 0,84 s, message de groupe en 0,11 s ;
+      - isolation : deux noms d'utilisateur SOCKS sortent par deux IP différentes, le même
+        nom garde la sienne (réglage par défaut `IsolateSOCKSAuth`, aucun `torrc`) ;
+      - lecture seule de `u09t`, 90 s : 54 connexions de canaux sur 75, les mêmes 3 relais
+        injoignables qu'avec Arti, 103 participants, 14 Mo, aucun avertissement.
 
 À faire avec l'utilisateur :
 
 - [ ] DM entre la console et l'app iOS de l'utilisateur (dans les deux sens, accusés).
 - [ ] Message dans un vrai canal (autorisation de publier hors du relais de l'utilisateur)
       et sa lecture par l'app ; présence vue par l'app.
-- [ ] Safari ; démon `tor` (`--tor-socks`) si l'utilisateur l'installe.
+- [ ] Safari.
 - [ ] Revue des décisions prises par l'agent (D19 à D27).
 
 ## Décisions
@@ -373,3 +381,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 9 | Superposition par relais (D26). 52 tests Rust, 5 `node`. Essai réel avec bitchat-geohash et Chrome headless. Commit `84f60f3` poussé par erreur avec 4 avertissements clippy dans `tests/map.rs` (le commit n'attendait pas clippy) : corrigés au commit suivant ; désormais clippy est vérifié avant chaque commit. |
 | 28/10/2026 | 10 | Groupes : format de l'app vérifié par son code Swift, transport Nostr, consentement, règles de l'app, destruction. Deux défauts trouvés et corrigés (boîte d'un groupe en attente, fermeture trop rapide des connexions). 57 tests Rust, 5 `node`, clippy propre avec et sans `arti`. Essai réel par Tor : groupe en 0,77 s, message en 0,16 s. |
 | 28/10/2026 | 12 | Lecture réelle par Tor sur `u09t` (10 min, 120 connexions, mémoire stable, relais morts identiques à bitchat-geohash) ; README. Restent les essais avec l'app et la revue des décisions de l'agent. |
+| 28/10/2026 | 12 | Démon `tor` : `tests/real_tor.rs` prend `BITCHAT_TOR_SOCKS` ; boucle fermée, isolation des circuits et lecture seule de `u09t` vérifiées par le démon. |
