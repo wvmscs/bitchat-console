@@ -106,3 +106,28 @@ test("nicknames known from the channels", () => {
   assert.equal(n.get("k1"), "bobby");
   assert.equal(n.has("k2") || n.has("me"), false);
 });
+
+test("geohash rectangles", () => {
+  const [[s, w], [n, e]] = v.bbox("u09tv");
+  // Paris, a level-5 cell: about 4.9 km by 4.9 km.
+  assert.ok(s < 48.86 && n > 48.82 && w < 2.33 && e > 2.28, `${s} ${w} ${n} ${e}`);
+  assert.ok(Math.abs((n - s) - 180 / 2 ** 12) < 1e-9 && Math.abs((e - w) - 360 / 2 ** 13) < 1e-9);
+  assert.equal(v.bbox("u0a"), null);
+  assert.equal(v.bbox(""), null);
+});
+
+test("room beside the panel", () => {
+  // A panel at the bottom left of a wide window: fit to its right.
+  assert.deepEqual(v.freeRoom(1400, 900, { right: 530, top: 260 }),
+    { topLeft: [550, 20], bottomRight: [20, 20] });
+  // A narrow window: fit above it.
+  assert.deepEqual(v.freeRoom(600, 900, { right: 590, top: 400 }),
+    { topLeft: [20, 20], bottomRight: [20, 520] });
+  assert.deepEqual(v.freeRoom(600, 900, null), { topLeft: [20, 20], bottomRight: [20, 20] });
+  // The map's panel on the right too: between the two.
+  assert.deepEqual(v.freeRoom(1400, 900, { right: 530, top: 260 }, { left: 1030, top: 10, bottom: 320 }),
+    { topLeft: [550, 20], bottomRight: [390, 20] });
+  // Folded to a strip: it does not count.
+  assert.deepEqual(v.freeRoom(1400, 900, { right: 530, top: 260 }, { left: 1030, top: 10, bottom: 60 }),
+    { topLeft: [550, 20], bottomRight: [20, 20] });
+});

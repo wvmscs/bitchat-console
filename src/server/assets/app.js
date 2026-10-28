@@ -714,7 +714,23 @@ function drawSaved(box) {
   box.append(sform, el("p", "muted small", "Scheduled messages go out while the console runs."));
 }
 
+// Over the map (the page is in the overlay's frame): tells the map which
+// cells are shown, so that it shows them too. The first time it does not
+// move the map, which keeps its own view.
+let lastView = null;
+function postView() {
+  const s = state.status;
+  if (window.parent === window || !s || !s.center) return;
+  const view = { center: s.center, cells: s.cells.map(c => c.geohash), selected: state.selected };
+  const key = JSON.stringify(view);
+  if (key === lastView) return;
+  const fit = lastView !== null;
+  lastView = key;
+  window.parent.postMessage({ type: "bitchat-console:view", ...view, fit }, location.origin);
+}
+
 function render() {
+  postView();
   updateTop();
   renderCells();
   renderFeed();

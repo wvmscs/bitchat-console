@@ -47,7 +47,10 @@ impl Upstream {
 }
 
 /// What the page of the map loads besides itself.
-const INJECTED: &str = "<link rel=\"stylesheet\" href=\"/console/assets/overlay.css\">\
+/// `hook.js` is a classic script: it runs while the page is parsed, after
+/// Leaflet and before the map's module makes the map.
+const INJECTED: &str = "<script src=\"/console/assets/hook.js\"></script>\
+     <link rel=\"stylesheet\" href=\"/console/assets/overlay.css\">\
      <script type=\"module\" src=\"/console/assets/overlay.js\"></script>";
 
 /// Headers that belong to one connection, not to the request.

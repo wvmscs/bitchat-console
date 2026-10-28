@@ -17,7 +17,8 @@ neighbours, write there, talk in private and in groups, from the browser, throug
   them over Bluetooth only).
 - **Mute** someone, or isolate them in their own view; **saved** and **scheduled** messages.
 - **Over the map**: with `--map`, a running [bitchat-geohash](https://github.com/wvmscs/bitchat-geohash)
-  map shows with the console floating over it; a cell of the map can be followed in one click.
+  map shows with the console floating over it; a cell of the map can be followed in one click,
+  and the cells chosen in the console are outlined on the map, which fits them.
 
 ## Run
 

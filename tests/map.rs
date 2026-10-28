@@ -138,6 +138,14 @@ async fn the_map_with_the_console_over_it() {
         body.contains("/console/assets/overlay.js") && body.contains("<div id=map>"),
         "{body}"
     );
+    // The hook goes in as a classic script, before the overlay's module.
+    let hook = body
+        .find("<script src=\"/console/assets/hook.js\"></script>")
+        .unwrap();
+    assert!(
+        hook < body.find("/console/assets/overlay.js").unwrap(),
+        "{body}"
+    );
     let csp = head
         .lines()
         .find(|l| l.to_lowercase().starts_with("content-security-policy"))

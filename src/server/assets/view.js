@@ -152,3 +152,36 @@ export function unixFromLocal(value) {
   const t = new Date(value).getTime();
   return Number.isFinite(t) ? Math.floor(t / 1000) : null;
 }
+
+const BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz";
+
+// [[south, west], [north, east]] of a geohash, or null.
+export function bbox(geohash) {
+  const lat = [-90, 90], lon = [-180, 180];
+  let even = true;
+  for (const ch of String(geohash).toLowerCase()) {
+    const v = BASE32.indexOf(ch);
+    if (v < 0) return null;
+    for (let b = 4; b >= 0; b--) {
+      const r = even ? lon : lat;
+      const mid = (r[0] + r[1]) / 2;
+      if ((v >> b) & 1) r[0] = mid; else r[1] = mid;
+      even = !even;
+    }
+  }
+  return geohash ? [[lat[0], lon[0]], [lat[1], lon[1]]] : null;
+}
+
+// Room left on the map beside the console's panel (its rectangle in the
+// window, or null when folded) and the map's own panel (on the right, or
+// null): Leaflet's paddings for fitting into it.
+export function freeRoom(width, height, panel, mapPanel = null, margin = 20) {
+  // The map's panel counts when it is a column, not a folded strip.
+  const right = mapPanel && mapPanel.bottom - mapPanel.top > 120 ? width - mapPanel.left + margin : margin;
+  if (!panel) return { topLeft: [margin, margin], bottomRight: [right, margin] };
+  const beside = (width - panel.right - right + margin) * height;
+  const above = width * panel.top;
+  return beside >= above
+    ? { topLeft: [panel.right + margin, margin], bottomRight: [right, margin] }
+    : { topLeft: [margin, margin], bottomRight: [margin, height - panel.top + margin] };
+}
