@@ -22,8 +22,8 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 13 | Zones de saisie (défilement), pseudo côté serveur, envoi du pseudo par cellule (D32) | ✅ |
 | 14 | Base d'historique `history.sqlite` (D31) : schéma, écriture, droits, recréation | ✅ |
 | 15 | Critère de départ (10 min) : messages grisés, DM cachés, effacement des DM | ✅ |
-| 16 | Onglet d'historique : recherche, tri, sélection, effacement ; modifications externes en direct | ☐ |
-| 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ☐ |
+| 16 | Onglet d'historique : recherche, tri, sélection, effacement ; modifications externes en direct | ✅ |
+| 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ⏳ |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
 8 dépend de 5 et 7 ; 9 dépend de 7 ; 10 dépend de 6 ; 11 dépend de 2 ; 12 clôt l'étape.
@@ -422,18 +422,31 @@ Demandé dans [EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) (28/10/2026).
 - [x] Décidé par l'utilisateur (28/10/2026) : la console qui suit une autre cellule ne quitte
       pas ses échanges en cours ; seul le départ du correspondant compte.
 
-### Lot 16 : onglet d'historique ☐
+### Lot 16 : onglet d'historique ✅
 
-- [ ] Page `/history?cell=…`, ouverte dans un nouvel onglet : recherche (FTS5 du SQLite
-      intégré, à vérifier), sélection, tri, effacement.
-- [ ] Modifications faites par un autre processus (IA, cron) visibles au plus tôt :
-      `PRAGMA data_version` interrogé chaque seconde, table de changements remplie par des
-      triggers, diffusion par le flux SSE existant.
+- [x] Page `/history?cell=…` (`history.html`, `history.js`), ouverte dans un nouvel onglet
+      (lien « history ↗ » de la barre, pour la cellule affichée ; « all private messages ↗ »
+      sous les conversations terminées) : filtres cellule (ou préfixe), type, texte ou
+      pseudo, clé, dates, effacés ; tri récent, ancien, par émetteur ; sélection et
+      effacement ; filtres gardés dans l'adresse ; contenus en texte seulement. Recherche :
+      pas de FTS5, une fonction SQL `contains_folded` (casse ignorée au-delà de l'ASCII, que
+      `LIKE` ne replie pas ; feature `functions` de `rusqlite`, pas de nouvelle dépendance) :
+      la base d'un jour reste petite (rotation, D33).
+- [x] Modifications faites par un autre processus (IA, cron, client SQLite) visibles en 2 s
+      au plus : trigger sur `content` et `deleted_at` → table `change`
+      (`migrations/history/0002_changes.sql`), `PRAGMA data_version` vérifié à chaque tour du
+      fil d'historique ; un message effacé quitte le fil, un message modifié y montre son
+      nouveau contenu, un DM effacé ailleurs reste effacé après un redémarrage ; événement
+      `history` et nouvel état pour les pages. Les lignes supprimées tout court (purge,
+      rotation) restent dans le fil : c'est du travail d'archive. Au retour d'une zone, les
+      messages effacés dans la base sont tenus pour vus (un relais ne les ramène pas).
 
 ### Lot 17 : API, outil batch, `SKILL.md` ☐
 
-- [ ] API CRUD HTTP de la console (`/api/history…`, gardée comme les autres par Host et
-      Origin).
+- [x] API CRUD HTTP de la console, gardée comme les autres par Host et Origin (faite avec
+      le lot 16) : `GET /api/history` (filtres de la page), `GET /api/history/{id}`,
+      `POST /api/history/insert` (ligne remise d'une archive), `/update` (contenu),
+      `/delete` (contenu effacé, ligne gardée) ; `409 no_history` avec `--no-history`.
 - [ ] Outil `bitchat-history` sur la même base, console arrêtée ou non : requêtes, suppression
       d'enregistrements, sauvegarde, rotation, effacement complet (D33).
 - [ ] Entrée cron (ou launchd) documentée : sauvegarde, compactage et rotation chaque jour.
@@ -516,3 +529,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 13 | Lot 13 : champs qui gardent leur défilement, champs de message en `textarea` qui grandit (Entrée envoie, Maj+Entrée va à la ligne) ; pseudo dans `console.sqlite` (repris une fois du navigateur), case par cellule pour ne pas l'envoyer (D32), pseudo du moment pour les préenregistrés, planifiés et groupes. 2 tests Rust ajoutés (base, envoi et redémarrage), routes testées ; 14 tests `node`. Chrome headless sur le binaire réel (`u09tv` téléporté, démon Tor, graine jetable, rien envoyé) : 12 vérifications, dont un défaut trouvé et corrigé (le champ du pseudo gardait l'ancienne valeur à la reconstruction ; un champ qui montre l'état de la console ne garde que ce que l'on tape). |
 | 28/10/2026 | 14 | Lot 14 : `history.sqlite` (D31), écriture sur un fil à part, WAL, `0600` pour la base, le WAL et la mémoire partagée, recréation en marche, `since` contre le retour de messages purgés, relecture des 24 h dans le fil, `--no-history`. 3 tests (`tests/history.rs` : tout est gardé, masqués compris, DM et états ; effacement en marche ; retour dans le fil, effacés et trop anciens) et groupes dans `tests/groups.rs` ; 68 tests Rust, 14 `node` ; clippy propre avec et sans `arti`. Binaire réel par le démon Tor (`u09tv` téléporté, rien envoyé) : fichiers en `0600`, WAL, base recréée 2 s après son effacement. |
 | 28/10/2026 | 15 | Lot 15 : départ après 10 min sans présence ni message (`/api/present`, calcul dans la page), messages grisés, conversations terminées rangées, effacement des DM (un ou tous, gardés effacés après redémarrage, contenu effacé dans l'historique). Tests : effacement et redémarrage (`tests/dm.rs`), présence (`tests/local.rs`), routes, 1 test `node` ; 70 tests Rust, 15 `node` ; clippy propre. |
+| 28/10/2026 | 16 | Lot 16 : onglet d'historique (filtres, tri, sélection, effacement, en direct), changements faits ailleurs repris dans le fil (trigger, `data_version`), API CRUD HTTP de l'historique. Module `history` restructuré autour de `HistoryFile` (partagé avec l'outil du lot 17). Défaut trouvé dans Chrome : la recherche « NUMÉRO » ne trouvait pas « numéro » (`LIKE` ne replie que l'ASCII) → fonction `contains_folded`. 74 tests Rust, 15 `node` ; clippy propre avec et sans `arti` ; Chrome headless sur le binaire réel : lien, filtres, recherche, effacement, effacés, modification externe visible en direct. |

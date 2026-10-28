@@ -320,3 +320,71 @@ async fn kept_messages_come_back_in_the_feed() {
     c.shutdown().await;
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[tokio::test]
+async fn changes_made_elsewhere_reach_the_feed() {
+    // Lot 16: another process (the cron, a local AI) edits or deletes rows.
+    let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
+    let dir = scratch("elsewhere");
+    let path = dir.join(HISTORY_FILE);
+    let c = console_with(&[relay.url()], [5; 32], Some(&path));
+    c.set_area("u09tv", true).await.unwrap();
+    status_until(&c, "connected", all_connected).await;
+    let mut events = c.subscribe();
+    let eve = Identity::generate();
+    for text in ["premier", "second"] {
+        relay.publish(channel_event(&eve, KIND_MESSAGE, "u09tv", &[], text));
+    }
+    until("both messages", async || {
+        (c.messages("u09tv").await.unwrap().len() == 2).then_some(())
+    })
+    .await;
+    c.history().unwrap().flush().await;
+
+    let other = Connection::open(&path).unwrap();
+    other
+        .execute(
+            "UPDATE message SET content = '[modéré]' WHERE content = 'premier'",
+            [],
+        )
+        .unwrap();
+    other
+        .execute(
+            "UPDATE message SET content = NULL, deleted_at = 1 WHERE content = 'second'",
+            [],
+        )
+        .unwrap();
+    let m = until("the changes in the feed", async || {
+        let m = c.messages("u09tv").await.unwrap();
+        (m.len() == 1 && m[0].content == "[modéré]").then_some(m)
+    })
+    .await;
+    assert_eq!(m[0].pubkey, eve.public_key_hex());
+    // The page is told: the history, and a new state.
+    let mut seen = (false, false);
+    while let Ok(Ok(e)) = tokio::time::timeout(Duration::from_millis(500), events.recv()).await {
+        match e {
+            bitchat_console::console::ConsoleEvent::History => seen.0 = true,
+            bitchat_console::console::ConsoleEvent::Area => seen.1 = true,
+            _ => {}
+        }
+    }
+    assert_eq!(seen, (true, true));
+
+    // Deleting through the console's API does the same.
+    let h = c.history().unwrap();
+    let rows = h
+        .query(bitchat_console::history::Query {
+            text: Some("modéré".into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(h.delete(vec![rows[0].id]).await.unwrap(), 1);
+    until("the feed empty", async || {
+        c.messages("u09tv").await.unwrap().is_empty().then_some(())
+    })
+    .await;
+    c.shutdown().await;
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -85,3 +85,8 @@ h3 { font-size: 13px; margin: 10px 0 4px; }
 .cell.quiet:hover, .cell.quiet.on { opacity: 1; }
 label.check.small { display: block; margin: 6px 0; }
 .msg.left { opacity: .55; }
+main.history { display: block; height: auto; }
+main.history > section { border-right: 0; }
+.hrow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 4px 0;
+        border-bottom: 1px solid var(--line); }
+.hrow .body { flex-basis: 100%; white-space: pre-wrap; overflow-wrap: anywhere; padding-left: 22px; }

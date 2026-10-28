@@ -29,6 +29,8 @@ const ALL: &[Asset] = &[
     asset!("app.js", JS),
     asset!("view.js", JS),
     asset!("app.css", CSS),
+    asset!("history.html", HTML),
+    asset!("history.js", JS),
     asset!("overlay.js", JS),
     asset!("hook.js", JS),
     asset!("overlay.css", CSS),

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -20,6 +20,7 @@ use tokio::sync::{broadcast, watch};
 
 use crate::console::{Console, ConsoleEvent, GroupOp};
 use crate::error::Error;
+use crate::history::{History, Record};
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -64,6 +65,8 @@ impl From<Error> for ApiError {
             Error::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             Error::Schedule(_) => (StatusCode::BAD_REQUEST, "bad_schedule"),
             Error::Group(_) => (StatusCode::UNPROCESSABLE_ENTITY, "group"),
+            Error::NoHistory => (StatusCode::CONFLICT, "no_history"),
+            Error::NoRow(_) => (StatusCode::NOT_FOUND, "not_found"),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
         ApiError::new(status, code, message)
@@ -145,6 +148,7 @@ pub(crate) async fn events(State(s): State<AppState>) -> Response {
                 }
                 Ok(ConsoleEvent::Dm(dm)) => ("dm", json!(dm)),
                 Ok(ConsoleEvent::Dms) => ("dms", json!(console.dms().await.ok()?)),
+                Ok(ConsoleEvent::History) => ("history", json!({})),
                 Ok(ConsoleEvent::DmStatus { id, status }) => {
                     ("dm_status", json!({ "id": id, "status": status }))
                 }
@@ -462,4 +466,76 @@ pub(crate) async fn group(
     };
     s.console.group(op).await?;
     Ok(Json(json!({ "ok": true })))
+}
+
+// --- History (lots 16 and 17, D31) ------------------------------------------
+
+fn history(s: &AppState) -> Result<&History, ApiError> {
+    s.console.history().ok_or_else(|| Error::NoHistory.into())
+}
+
+/// `GET /api/history?kind=&cell=&group=&key=&text=&from=&to=&deleted=true&order=new|old|sender&limit=&offset=`:
+/// rows of the history, the newest first by default.
+pub(crate) async fn history_query(
+    State(s): State<AppState>,
+    Query(q): Query<crate::history::Query>,
+) -> Result<Json<Value>, ApiError> {
+    Ok(Json(json!({ "records": history(&s)?.query(q).await? })))
+}
+
+/// `GET /api/history/{id}`.
+pub(crate) async fn history_get(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Json<Value>, ApiError> {
+    match history(&s)?.get(id).await? {
+        Some(r) => Ok(Json(json!(r))),
+        None => Err(Error::NoRow(id).into()),
+    }
+}
+
+#[derive(Deserialize)]
+pub(crate) struct IdsBody {
+    ids: Vec<i64>,
+}
+
+/// `POST /api/history/delete {"ids": [..]}`: content removed, rows kept; the
+/// page hides them.
+pub(crate) async fn history_delete(
+    State(s): State<AppState>,
+    body: Result<Json<IdsBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    Ok(Json(
+        json!({ "deleted": history(&s)?.delete(b.ids).await? }),
+    ))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct UpdateBody {
+    id: i64,
+    content: String,
+}
+
+/// `POST /api/history/update {"id", "content"}`: the page shows the new
+/// content (moderation).
+pub(crate) async fn history_update(
+    State(s): State<AppState>,
+    body: Result<Json<UpdateBody>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(b) = body?;
+    if !history(&s)?.update(b.id, b.content).await? {
+        return Err(Error::NoRow(b.id).into());
+    }
+    Ok(Json(json!({ "updated": true })))
+}
+
+/// `POST /api/history/insert {record}`: a row put back (from an archive);
+/// `id` null if that message is already there.
+pub(crate) async fn history_insert(
+    State(s): State<AppState>,
+    body: Result<Json<Record>, JsonRejection>,
+) -> Result<Json<Value>, ApiError> {
+    let Json(r) = body?;
+    Ok(Json(json!({ "id": history(&s)?.insert(r).await? })))
 }

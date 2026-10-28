@@ -110,6 +110,15 @@ fn console_routes(prefix: &str) -> Router<api::AppState> {
         .route(&p("/api/dm"), post(api::dm))
         .route(&p("/api/dm/delete"), post(api::delete_dms))
         .route(&p("/api/present"), get(api::present))
+        .route(
+            &p("/history"),
+            get(|| async { serve_asset("history.html") }),
+        )
+        .route(&p("/api/history"), get(api::history_query))
+        .route(&p("/api/history/{id}"), get(api::history_get))
+        .route(&p("/api/history/delete"), post(api::history_delete))
+        .route(&p("/api/history/update"), post(api::history_update))
+        .route(&p("/api/history/insert"), post(api::history_insert))
         .route(&p("/api/read"), post(api::read))
         .route(&p("/api/mute"), post(api::mute))
         .route(&p("/api/nickname"), post(api::nickname))

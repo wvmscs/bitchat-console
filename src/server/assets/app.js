@@ -305,7 +305,12 @@ function buildTop() {
     const d = state.dms.find(x => !x.own && !x.read);
     if (d) openConvo(d.peer, d.cell);
   });
-  top.append(ui.title, ui.geohash, tl, ui.follow, ui.link, ui.info, sl, ui.unread, ui.error);
+  // Everything kept (D31), in a tab of its own (lot 16).
+  ui.history = el("a", "small", "history ↗");
+  ui.history.target = "_blank";
+  ui.history.rel = "noopener";
+  ui.history.title = "every message kept, for the cell shown: search, sort, delete";
+  top.append(ui.title, ui.geohash, tl, ui.follow, ui.link, ui.info, sl, ui.unread, ui.history, ui.error);
 }
 
 async function follow() {
@@ -322,6 +327,8 @@ async function follow() {
 }
 
 function updateTop() {
+  const cell = currentCell();
+  ui.history.href = "history" + (cell ? "?cell=" + encodeURIComponent(cell) : "");
   const n = unreadTotal(state.dms);
   ui.unread.textContent = n ? `✉ ${n}` : "";
   ui.unread.hidden = !n;
@@ -608,7 +615,11 @@ function drawDms(box) {
   const active = newest.filter(c => !over(c)), ended = newest.filter(over);
   box.append(fold("convos", `Conversations (${active.length})`, active.map(button), { hold: true }));
   if (ended.length) {
-    box.append(fold("ended", `Ended (${ended.length}): the other side left`, ended.map(button),
+    const all = el("a", "small", "all private messages ↗");
+    all.href = "history?kind=dm";
+    all.target = "_blank";
+    all.rel = "noopener";
+    box.append(fold("ended", `Ended (${ended.length}): the other side left`, [...ended.map(button), all],
       { open: false, hold: true }));
   }
   if (!state.convo) return;

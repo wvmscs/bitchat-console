@@ -39,6 +39,11 @@ pub trait MessageStore: Send {
     fn cell(&self, cell: &str) -> Vec<Message>;
     /// Drops what is older than `before` (Unix time).
     fn purge(&mut self, before: i64);
+    /// Drops a message (deleted in the history, lot 16); false if unknown.
+    fn remove(&mut self, id: &str) -> bool;
+    /// Changes the content of a message (edited in the history); false if
+    /// unknown or unchanged.
+    fn set_content(&mut self, id: &str, content: &str) -> bool;
 }
 
 /// In memory: at most `per_cell` messages per cell.
@@ -93,6 +98,29 @@ impl MessageStore for MemoryStore {
             q.retain(|m| m.created_at >= before);
         }
         self.cells.retain(|_, q| !q.is_empty());
+    }
+
+    fn remove(&mut self, id: &str) -> bool {
+        for q in self.cells.values_mut() {
+            if let Some(i) = q.iter().position(|m| m.id == id) {
+                q.remove(i);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn set_content(&mut self, id: &str, content: &str) -> bool {
+        for q in self.cells.values_mut() {
+            if let Some(m) = q.iter_mut().find(|m| m.id == id) {
+                if m.content == content {
+                    return false;
+                }
+                m.content = content.to_owned();
+                return true;
+            }
+        }
+        false
     }
 }
 

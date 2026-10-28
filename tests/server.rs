@@ -50,8 +50,15 @@ struct Running {
 
 impl Running {
     async fn start() -> Running {
+        Self::start_keeping(None).await
+    }
+
+    /// With a history (D31) in `history`.
+    async fn start_keeping(history: Option<std::path::PathBuf>) -> Running {
         let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
-        let console = Arc::new(console(&[relay.url()], Arc::new(Loopback)));
+        let mut c = config(&[relay.url()], Arc::new(Loopback));
+        c.history_path = history;
+        let console = Arc::new(Console::start(c));
         console.set_area("u09tv", true).await.unwrap();
         status_until(&console, "connected", all_connected).await;
         let server = serve(
@@ -292,4 +299,79 @@ async fn live_stream_and_sending() {
         }
     }
     let _ = &r.console;
+}
+
+#[tokio::test]
+async fn history_api() {
+    // Lots 16 and 17: the page and the CRUD of the history.
+    let r = Running::start().await;
+    let (status, b) = http(r.addr, "GET", "/api/history", &[r.host()], "").await;
+    assert_eq!(status, 409, "no history: {b}");
+
+    let path = std::env::temp_dir().join(format!(
+        "bitchat-console-api-history-{}.sqlite",
+        std::process::id()
+    ));
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+    }
+    let r = Running::start_keeping(Some(path.clone())).await;
+    let (status, body) = http(r.addr, "GET", "/history", &[r.host()], "").await;
+    assert_eq!(status, 200);
+    assert!(body.contains("BitChat history"));
+
+    // Create (an archive put back), whatever its date.
+    let record = json!({
+        "kind": "channel", "msg_id": "m1", "geohash": "u09tv", "sender": "ab".repeat(32),
+        "nickname": "zoé", "content": "remis", "created_at": 1000
+    });
+    let (status, b) = r.post("/api/history/insert", &record.to_string()).await;
+    assert_eq!(status, 200);
+    let id = b["id"].as_i64().unwrap();
+    let (_, b) = r.post("/api/history/insert", &record.to_string()).await;
+    assert_eq!(b["id"], Value::Null, "once");
+    // Read.
+    let get = |path: String| {
+        let r = &r;
+        async move {
+            let (status, body) = http(r.addr, "GET", &path, &[r.host()], "").await;
+            (
+                status,
+                serde_json::from_str::<Value>(&body).unwrap_or(Value::Null),
+            )
+        }
+    };
+    let (status, v) = get("/api/history?cell=u09t&text=REMIS".into()).await;
+    assert_eq!(status, 200);
+    assert_eq!(v["records"][0]["id"], json!(id));
+    assert_eq!(v["records"][0]["nickname"], "zoé");
+    let (status, v) = get(format!("/api/history/{id}")).await;
+    assert_eq!((status, &v["content"]), (200, &json!("remis")));
+    assert_eq!(get("/api/history/999".into()).await.0, 404);
+    // Update, delete.
+    let (status, _) = r
+        .post(
+            "/api/history/update",
+            &json!({"id": id, "content": "[modéré]"}).to_string(),
+        )
+        .await;
+    assert_eq!(status, 200);
+    let (status, b) = r
+        .post("/api/history/delete", &json!({"ids": [id]}).to_string())
+        .await;
+    assert_eq!((status, &b["deleted"]), (200, &json!(1)));
+    let (_, v) = get("/api/history".into()).await;
+    assert_eq!(v["records"], json!([]), "deleted rows are left out");
+    let (_, v) = get("/api/history?deleted=true".into()).await;
+    assert_eq!(v["records"][0]["content"], Value::Null);
+    let (status, _) = r
+        .post(
+            "/api/history/update",
+            &json!({"id": id, "content": "x"}).to_string(),
+        )
+        .await;
+    assert_eq!(status, 404, "a deleted row is not edited");
+    for ext in ["", "-wal", "-shm"] {
+        let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+    }
 }

@@ -48,6 +48,10 @@ pub enum Error {
     Map(String),
     #[error("database: {0}")]
     Db(String),
+    #[error("the history is off (--no-history)")]
+    NoHistory,
+    #[error("no history row {0}")]
+    NoRow(i64),
     #[error("TLS: {0}")]
     Tls(String),
     /// A non-loopback address without `--allow-remote`.

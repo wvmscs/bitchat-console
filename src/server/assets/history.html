@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BitChat history</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/app.css">
+<script type="module" src="assets/history.js"></script>
+</head>
+<body>
+<header id="top">
+  <h1>History</h1>
+  <input id="cell" placeholder="cell (or prefix)" aria-label="cell">
+  <select id="kind" aria-label="kind">
+    <option value="">all</option>
+    <option value="channel">channels</option>
+    <option value="dm">private</option>
+    <option value="group">groups</option>
+  </select>
+  <input id="text" type="search" placeholder="search text or nickname" aria-label="search">
+  <input id="key" placeholder="key (hex)" aria-label="key">
+  <label class="check" title="from">from <input id="from" type="datetime-local"></label>
+  <label class="check" title="to">to <input id="to" type="datetime-local"></label>
+  <select id="order" aria-label="order">
+    <option value="new">newest first</option>
+    <option value="old">oldest first</option>
+    <option value="sender">by sender</option>
+  </select>
+  <label class="check"><input id="deleted" type="checkbox"> deleted too</label>
+  <span id="link" class="link"></span>
+</header>
+<main class="history">
+  <section id="list" aria-label="history"></section>
+</main>
+</body>
+</html>

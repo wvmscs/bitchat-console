@@ -28,7 +28,7 @@ use crate::connector::Connector;
 use crate::db::{Db, Preset, Schedule};
 use crate::envelope;
 use crate::error::{Error, Result};
-use crate::history::History;
+use crate::history::{Changed, History};
 use crate::identity::{CellKey, NoiseIdentity, Seed};
 use crate::nostr::{Event, Filter, unix_now};
 use crate::packet::{self, Packet};
@@ -272,6 +272,8 @@ pub enum ConsoleEvent {
     Dm(DirectMessage),
     /// Private messages went away (deleted): the whole list again.
     Dms,
+    /// The history changed after writing (lot 16).
+    History,
     DmStatus {
         id: String,
         status: DmStatus,
@@ -320,8 +322,9 @@ enum Command {
         reply: oneshot::Sender<Result<usize>>,
     },
     Status(oneshot::Sender<AreaStatus>),
-    /// Messages of the history back in the feed.
-    Restore(Vec<Message>),
+    /// Messages of the history back in the feed, and those deleted there
+    /// (a relay sending one again does not bring it back).
+    Restore(Vec<Message>, Vec<String>),
     Shutdown,
 }
 
@@ -345,16 +348,16 @@ impl Console {
             }),
             None => Db::open_in_memory().expect("in-memory SQLite"),
         };
-        let history = config
-            .history_path
-            .as_ref()
-            .and_then(|p| match History::open(p) {
+        let (changes_tx, changes) = mpsc::unbounded_channel();
+        let history = config.history_path.as_ref().and_then(|p| {
+            match History::open_notifying(p, Some(changes_tx)) {
                 Ok(h) => Some(h),
                 Err(e) => {
                     tracing::error!(error = %e, "history unusable, nothing kept for this run");
                     None
                 }
-            });
+            }
+        });
         let per_cell = config.per_cell;
         let (tx, rx) = mpsc::unbounded_channel();
         let (relay_tx, relay_rx) = mpsc::unbounded_channel();
@@ -391,7 +394,7 @@ impl Console {
             relay_tx,
             events: events.clone(),
         };
-        let task = tokio::spawn(state.run(rx, relay_rx));
+        let task = tokio::spawn(state.run(rx, relay_rx, changes));
         Console {
             tx,
             events,
@@ -427,12 +430,14 @@ impl Console {
         let cells = self.ask(|r| Command::SetArea(g, teleport, r)).await??;
         if let Some(h) = &self.history {
             let since = unix_now() - 24 * 3600;
-            let mut back = Vec::new();
+            let (mut back, mut deleted) = (Vec::new(), Vec::new());
             for c in &cells {
-                back.extend(h.recent(c, since, self.per_cell).await);
+                let (kept, gone) = h.recent(c, since, self.per_cell).await;
+                back.extend(kept);
+                deleted.extend(gone);
             }
-            if !back.is_empty() {
-                let _ = self.tx.send(Command::Restore(back));
+            if !back.is_empty() || !deleted.is_empty() {
+                let _ = self.tx.send(Command::Restore(back, deleted));
             }
         }
         Ok(cells)
@@ -792,6 +797,7 @@ impl State {
         mut self,
         mut commands: mpsc::UnboundedReceiver<Command>,
         mut relays: mpsc::UnboundedReceiver<RelayEvent>,
+        mut changes: mpsc::UnboundedReceiver<Vec<Changed>>,
     ) {
         let mut tick = tokio::time::interval(Duration::from_secs(30));
         let mut schedules = tokio::time::interval(Duration::from_secs(1));
@@ -804,6 +810,7 @@ impl State {
                     Some(c) => self.on_command(c),
                 },
                 Some(e) = relays.recv() => self.on_relay(e),
+                Some(c) = changes.recv() => self.on_history(c),
                 _ = tick.tick() => self.on_tick(),
                 _ = schedules.tick() => self.send_due(),
                 _ = async {
@@ -905,7 +912,7 @@ impl State {
             Command::Status(reply) => {
                 let _ = reply.send(self.status());
             }
-            Command::Restore(messages) => self.restore(messages),
+            Command::Restore(messages, deleted) => self.restore(messages, deleted),
             Command::Presence(reply) => {
                 let _ = reply.send(self.presence());
             }
@@ -1673,9 +1680,60 @@ impl State {
         }
     }
 
+    /// Contents changed in the history after writing (lot 16): deleted
+    /// messages leave the feed, edited ones show their new content.
+    fn on_history(&mut self, changes: Vec<Changed>) {
+        let mut any = false;
+        let mut dms_gone = Vec::new();
+        for c in changes {
+            match (c.kind.as_str(), c.content) {
+                ("channel", None) => {
+                    self.seen.insert(&c.msg_id);
+                    any |= self.store.remove(&c.msg_id);
+                }
+                ("channel", Some(t)) => any |= self.store.set_content(&c.msg_id, &t),
+                ("dm", None) => {
+                    let n = self.dms.len();
+                    self.dms.retain(|d| d.id != c.msg_id);
+                    any |= self.dms.len() != n;
+                    dms_gone.push(c.msg_id);
+                }
+                ("dm", Some(t)) => {
+                    for d in self.dms.iter_mut().filter(|d| d.id == c.msg_id) {
+                        any |= d.content != t;
+                        d.content = t.clone();
+                    }
+                }
+                ("group", None) => {
+                    let n = self.group_msgs.len();
+                    self.group_msgs.retain(|m| m.id != c.msg_id);
+                    any |= self.group_msgs.len() != n;
+                }
+                ("group", Some(t)) => {
+                    for m in self.group_msgs.iter_mut().filter(|m| m.id == c.msg_id) {
+                        any |= m.content != t;
+                        m.content = t.clone();
+                    }
+                }
+                _ => {}
+            }
+        }
+        // Deleted elsewhere: they stay deleted after a restart too.
+        if let Err(e) = self.db.set_deleted(&dms_gone, unix_now()) {
+            tracing::warn!(error = %e, "cannot remember deleted messages");
+        }
+        if any {
+            self.emit(ConsoleEvent::Area);
+        }
+        self.emit(ConsoleEvent::History);
+    }
+
     /// Messages of the history, back in the feed of cells still followed;
     /// a relay sending one of them again only adds itself to it.
-    fn restore(&mut self, messages: Vec<Message>) {
+    fn restore(&mut self, messages: Vec<Message>, deleted: Vec<String>) {
+        for id in &deleted {
+            self.seen.insert(id);
+        }
         let mut any = false;
         for mut m in messages {
             if !self.cells.contains(&m.cell) || self.seen.contains(&m.id) {
