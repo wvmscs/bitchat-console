@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Over the map: the outline of the console's cells no longer takes the map's hovers and clicks. It was drawn on its own SVG over the map's, which caught the pointer even where it drew nothing; it now has its own pane, deaf to the pointer.
 - Page: a geohash typed in the top bar is no longer replaced by the current centre between pressing and releasing "Follow" (a live update came in between and the console followed the same cell again). The counts of a cell say what they count.
 - Page: live events no longer take the focus away. Fields keep their value, focus and caret when a section is rebuilt; a section waits while a button is held (the click went to a replaced button) or text is selected in it; the cell chosen in the composer stays chosen. Found while testing with the app (lot 12).
 - README: `node --test tests/js/*.mjs` (Node 22 takes files, not a directory).

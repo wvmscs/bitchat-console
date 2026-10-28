@@ -72,11 +72,18 @@ function showView(v) {
   const map = window.__bitchatMap;
   if (!map || !window.L) return;
   if (outline) outline.remove();
+  // Their own pane, deaf to the pointer: an SVG drawn over the map's own
+  // would take its hovers and clicks, even where it draws nothing.
+  if (!map.getPane("bc-outline")) {
+    const pane = map.createPane("bc-outline");
+    pane.style.pointerEvents = "none";
+    pane.style.zIndex = 450;
+  }
   const cells = v.selected ? [v.selected] : v.cells;
   const boxes = cells.map(c => [c, bbox(c)]).filter(([, b]) => b);
   if (!boxes.length) return;
   outline = L.layerGroup(boxes.map(([c, b]) => L.rectangle(b, {
-    interactive: false, fill: false, dashArray: c === v.center || v.selected ? null : "4 4",
+    pane: "bc-outline", interactive: false, fill: false, dashArray: c === v.center || v.selected ? null : "4 4",
     weight: c === v.center || v.selected ? 3 : 1.5, color: "#0a66c2",
   }))).addTo(map);
   if (!v.fit) return;
