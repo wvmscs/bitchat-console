@@ -19,7 +19,7 @@ async fn the_area_is_a_cell_and_its_neighbours() {
         TestRelay::spawn("127.0.0.1:0").await.unwrap(),
     );
     let c = console(&[a.url(), b.url()], Arc::new(Loopback));
-    let cells = c.set_area("U09TV").await.unwrap();
+    let cells = c.set_area("U09TV", false).await.unwrap();
     assert_eq!(
         cells,
         [
@@ -92,7 +92,7 @@ async fn bad_events_are_dropped() {
     replies.push(json!(["EOSE", "{sub}"]).to_string());
     let relay = scripted_relay(replies).await;
     let c = console(&[relay], Arc::new(Loopback));
-    c.set_area("u09tv").await.unwrap();
+    c.set_area("u09tv", false).await.unwrap();
     status_until(&c, "connected", all_connected).await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     let feed = c.messages("u09tv").await.unwrap();
@@ -105,9 +105,9 @@ async fn bad_events_are_dropped() {
 async fn moving_the_area_moves_the_connections() {
     let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
     let c = console(&[relay.url()], Arc::new(Loopback));
-    c.set_area("u09tv").await.unwrap();
+    c.set_area("u09tv", false).await.unwrap();
     status_until(&c, "connected", all_connected).await;
-    let cells = c.set_area("u09ty").await.unwrap();
+    let cells = c.set_area("u09ty", false).await.unwrap();
     assert_eq!(cells[0], "u09ty");
     let s = status_until(&c, "connected", all_connected).await;
     assert_eq!(s.center.as_deref(), Some("u09ty"));
@@ -125,11 +125,11 @@ async fn moving_the_area_moves_the_connections() {
     assert!(c.messages("u09ts").await.unwrap().is_empty());
     // Not channels.
     assert!(matches!(
-        c.set_area("u09").await,
+        c.set_area("u09", false).await,
         Err(Error::NotAChannel(_))
     ));
     assert!(matches!(
-        c.set_area("u0a00").await,
+        c.set_area("u0a00", false).await,
         Err(Error::InvalidGeohash(_))
     ));
     c.shutdown().await;
@@ -140,7 +140,7 @@ async fn each_cell_gets_its_own_circuit() {
     let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
     let proxy = TestSocks::spawn().await;
     let c = console(&[relay.url()], Arc::new(Socks5::new(proxy.addr)));
-    c.set_area("u09tv").await.unwrap();
+    c.set_area("u09tv", false).await.unwrap();
     status_until(&c, "connected", all_connected).await;
     let mut users: Vec<String> = proxy.requests().into_iter().map(|r| r.0).collect();
     users.sort();

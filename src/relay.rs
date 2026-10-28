@@ -212,7 +212,8 @@ async fn run(
                     msg.extend(filters.iter().map(Filter::to_json));
                     WsMessage::text(Value::Array(msg).to_string())
                 };
-                let mut alive = sink.send(req(&filters)).await.is_ok();
+                // A connection for writing only (presence) subscribes to nothing.
+                let mut alive = filters.is_empty() || sink.send(req(&filters)).await.is_ok();
                 for e in queue.drain(..) {
                     if alive {
                         let text = json!(["EVENT", e]).to_string();

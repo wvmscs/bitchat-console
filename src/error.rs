@@ -15,6 +15,12 @@ pub enum Error {
     NotAChannel(String),
     #[error("the console has stopped")]
     ConsoleStopped,
+    #[error("no area followed yet")]
+    NoArea,
+    #[error("{0:?} is not one of the followed cells")]
+    NotInArea(String),
+    #[error("empty message")]
+    EmptyMessage,
     /// A key file other users can read: the console refuses to use it.
     #[error("{0} can be read by other users: run `chmod 600` on it")]
     InsecureKeyFile(String),

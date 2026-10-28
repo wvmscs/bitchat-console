@@ -11,7 +11,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 2 | Connecteur Tor (SOCKS5, isolation par geohash), refus du clair | ✅ |
 | 3 | Identités : graine, clé par geohash, identité Noise | ✅ |
 | 4 | Lecture : 9 cellules, connexions, abonnements, fil, changement de geohash à chaud | ✅ |
-| 5 | Écriture : messages, preuve de travail, présences, marque `teleport` | ⬜ |
+| 5 | Écriture : messages, preuve de travail, présences, marque `teleport` | ✅ |
 | 6 | Messages privés (enveloppe BitChat `v2:`, relais par défaut) | ⬜ |
 | 7 | Serveur web et page console | ⬜ |
 | 8 | Masquage, isolation d'un intervenant, messages préenregistrés et planifiés | ⬜ |
@@ -115,13 +115,27 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
       invalides écartés (signature, autre cellule, autre kind), changement de zone,
       9 circuits pour 9 cellules, listes (téléchargement, cache, repli, refus, Tor).
 
-### Lot 5 : écriture ⬜
+### Lot 5 : écriture ✅
 
-- [ ] Message kind 20000 signé avec la clé de la cellule choisie : tags `g`, `n`, `t=teleport`
-      selon le choix fait au changement de geohash (D5), `nonce` NIP-13 (8 bits, D8).
-- [ ] Envoi aux relais de la cellule (union, D4), `OK` de chaque relais affiché.
-- [ ] Présences kind 20001 toutes les 40 à 80 s aux niveaux 2, 4 et 5 de la cellule (D5).
-- [ ] Boucle fermée sur `relay.famillevital.club` avec une graine jetable.
+- [x] Message kind 20000 signé avec la clé de la cellule choisie parmi les 9 (centre par
+      défaut), **exactement comme l'app** (`ephemeralGeohashTags`) : tags `g`, `n` (pseudo
+      sans espaces autour, omis s'il est vide), `t=teleport` si la console s'annonce
+      téléportée, puis `nonce` NIP-13 miné comme `NostrPoW.swift` (`["nonce", 16 hex,
+      "8"]`, départ aléatoire, 2 s puis cible divisée par deux ; D8).
+- [x] Envoi aux relais d'écriture de la cellule (`Strategy::write`, D4), connexion ouverte
+      si besoin ; `OK` acceptés ajoutés aux relais du message, refus affichés ; message
+      ajouté au fil (`own`).
+- [x] Présences kind 20001 comme l'app (`createGeohashPresenceEvent` : tag `g` seul,
+      contenu vide), chacune avec la clé de sa cellule, aux niveaux 2, 4 et 5 du centre,
+      toutes les 40 à 80 s (première au bout de 3 s), par des connexions d'écriture seule
+      quand la cellule n'est pas suivie. Choix « téléporté » à chaque changement de zone
+      (`set_area(g, teleport)`) : messages marqués, **aucune présence** (D22).
+- [x] Tests (lecteur indépendant branché sur le relais de test) : format et ordre des tags,
+      clé de la cellule, preuve de travail ≥ 8 bits, `OK` pris en compte, voisin avec sa
+      propre clé, refus hors zone et message vide, marque `teleport`, présences sur
+      `u0`/`u09t`/`u09tv` puis de nouveau, plus rien une fois téléporté.
+- [ ] Boucle fermée sur `relay.famillevital.club` : par Tor uniquement, donc au lot 11 (Arti)
+      ou quand `tor` sera installé.
 
 ### Lot 6 : messages privés ⬜
 
@@ -184,6 +198,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D19 | Calcul des geohash dans `geohash-relays` | Module maison sans dépendance (décodage, encodage, voisins), aligné sur `Geohash.swift` d'iOS plutôt que sur la crate `geohash` (qui fait boucler la latitude aux pôles) : crate facile à transposer dans les apps — *prise par l'agent, à revoir* | ✅ |
 | D20 | Isolation Tor | Une connexion par couple (relais, cellule), chacune avec son identifiant SOCKS, donc son circuit Tor : un relais ne voit sur une connexion qu'une cellule et sa clé, et ne peut pas relier les clés de deux cellules par la connexion ni par l'adresse de sortie (l'app iOS partage une connexion par relais et n'isole pas ses flux). Coût : plus de connexions — *prise par l'agent, à revoir* | ✅ |
 | D21 | Listes de relais | Téléchargées par Tor comme les relais (rien ne sort en clair), dernière copie valide en cache et utilisée en repli ; règle iOS : liste avec un hôte à deux endroits refusée — *prise par l'agent, à revoir* | ✅ |
+| D22 | Présence et téléportation | Comme l'app : en mode « sur place », présences (tag `g` seul, jamais `teleport`, comme iOS) ; en mode « téléporté », messages `t=teleport` et aucune présence (un utilisateur téléporté de l'app n'en envoie pas) — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -209,3 +224,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 2 | Connecteur : trait `Connector`, `Socks5` (isolation par identifiant, D20), `Loopback` (tests seulement), `Error::TorUnavailable`. 7 tests (proxy SOCKS5 de test). `tor` n'est pas installé sur la machine : essai réel avec Tor reporté au lot 11 (Arti, sans rien installer) ou à l'utilisateur. |
 | 28/10/2026 | 3 | Module `identity` (graine, `CellKey`, `NoiseIdentity`, `Keys`), dépendances `k256`, `sha2`, `hmac`, `rand_core`, `x25519-dalek`, `ed25519-dalek` (D15). Vecteurs CryptoKit identiques. `geohash-relays` en dépendance git (SSH, `git-fetch-with-cli`), verrouillée sur `55f63cd`. 13 tests. |
 | 28/10/2026 | 4 | Lecture : `nostr.rs` (repris de bitchat-geohash, signature ajoutée), `relay.rs`, `console.rs` (tâche, zone, fil, participants), `store.rs` (D16), `lists.rs` (D21). Défaut trouvé par les tests et corrigé (événement marqué vu avant validation). 23 tests, stables sur 3 lancements. Essai réel par Tor reporté (pas de `tor` installé : lot 11, Arti). |
+| 28/10/2026 | 5 | Écriture : `pow.rs` (comme `NostrPoW.swift`), `Console::send`, `set_area(g, teleport)`, présences, `OK`. 28 tests, stables sur 3 lancements ; clippy propre. Boucle fermée réelle reportée (Tor). |

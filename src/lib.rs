@@ -10,6 +10,7 @@ mod error;
 pub mod identity;
 pub mod lists;
 pub mod nostr;
+pub mod pow;
 pub mod relay;
 pub mod store;
 

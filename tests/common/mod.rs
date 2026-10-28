@@ -35,8 +35,20 @@ pub fn strategy_of(urls: &[String]) -> AppStrategy {
     )
 }
 
+/// A fixed seed: keys are the same from one run to the next.
+pub fn test_seed() -> Arc<bitchat_console::identity::Seed> {
+    Arc::new(bitchat_console::identity::Seed::from_bytes([7; 32]))
+}
+
+/// The test configuration: no presence unless a test turns it on.
+pub fn config(urls: &[String], connector: Arc<dyn Connector>) -> ConsoleConfig {
+    let mut c = ConsoleConfig::new(Arc::new(strategy_of(urls)), connector, test_seed());
+    c.presence = false;
+    c
+}
+
 pub fn console(urls: &[String], connector: Arc<dyn Connector>) -> Console {
-    Console::start(ConsoleConfig::new(Arc::new(strategy_of(urls)), connector))
+    Console::start(config(urls, connector))
 }
 
 /// Waits until `check` holds on the console status.
@@ -116,4 +128,36 @@ pub async fn scripted_relay(replies: Vec<String>) -> String {
         }
     });
     url
+}
+
+/// A plain client subscribed to `relay` with `filter` (JSON); returns the
+/// events it receives.
+pub async fn reader(relay: &str, filter: Value) -> tokio::sync::mpsc::UnboundedReceiver<Event> {
+    let (mut ws, _) = tokio_tungstenite::connect_async(relay).await.unwrap();
+    let req = serde_json::json!(["REQ", "reader", filter]).to_string();
+    ws.send(Message::text(req)).await.unwrap();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        while let Some(Ok(msg)) = ws.next().await {
+            let Message::Text(text) = msg else { continue };
+            let Ok(Value::Array(v)) = serde_json::from_str::<Value>(text.as_str()) else {
+                continue;
+            };
+            if v.first().and_then(Value::as_str) == Some("EVENT")
+                && let Some(Ok(e)) = v.get(2).cloned().map(serde_json::from_value::<Event>)
+            {
+                let _ = tx.send(e);
+            }
+        }
+    });
+    // Let the REQ reach the relay before anything is published.
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    rx
+}
+
+pub async fn next(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Event>) -> Event {
+    tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("no event within 5 s")
+        .unwrap()
 }
