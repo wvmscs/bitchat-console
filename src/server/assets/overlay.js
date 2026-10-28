@@ -102,10 +102,16 @@ function showView(v) {
 // (bitchat-geohash `POST /api/area`, lot 19). Then the console's cells are
 // framed again, after the map's own framing of its new area.
 let synced = null;
+let lastView = null;
+// The map follows the console's centre when it moves, not its selection:
+// an area chosen by double-click stays until the centre moves.
+let lastCenter = null;
 
-async function followArea(v) {
+// `force`: asked by the user (double-click on a cell of the console), even
+// if the console's centre did not move.
+async function followArea(v, force = false) {
   const area = mapArea(v.center);
-  if (area === synced) return;
+  if (area === synced && !force) return;
   synced = area;
   title.textContent = `BitChat console · map → #${area}…`;
   const r = await fetch("/api/area", {
@@ -125,7 +131,16 @@ async function followArea(v) {
 window.addEventListener("message", e => {
   if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
   if (e.data && e.data.type === "bitchat-console:view") {
+    lastView = e.data;
     showView(e.data);
-    followArea(e.data);
+    if (e.data.center !== lastCenter) {
+      lastCenter = e.data.center;
+      followArea(e.data);
+    }
+  } else if (e.data && e.data.type === "bitchat-console:area" && typeof e.data.cell === "string") {
+    // The map's area for one of the console's cells; the console keeps its
+    // own centre.
+    const v = { ...(lastView || { cells: [e.data.cell] }), center: e.data.cell, selected: e.data.cell };
+    followArea(v, true);
   }
 });

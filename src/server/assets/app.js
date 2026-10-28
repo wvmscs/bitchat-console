@@ -298,7 +298,8 @@ function drawCells(box) {
     const n = (state.messages[c.geohash] || []).length;
     const me = s.keys && s.keys[c.geohash];
     b.title = "people: keys seen in the last 15 minutes (messages and presences)\n"
-      + "msgs: channel messages received since the console started (relays keep none)";
+      + "msgs: channel messages received since the console started (relays keep none)"
+      + (overMap ? "\ndouble-click or ctrl-click: the map watches the area of this cell" : "");
     b.append(el("b", null, "#" + c.geohash), el("span", "muted", ` ${c.participants} people`),
       el("span", "muted small", ` ${n} msgs · relays ${relayCount(c)}`));
     if (me) {
@@ -306,8 +307,17 @@ function drawCells(box) {
       you.title = "your key in this cell: " + me;
       b.append(you);
     }
-    b.addEventListener("click", () => {
+    b.addEventListener("click", e => {
+      if (e.ctrlKey || e.metaKey) { mapAreaOf(c.geohash); return; }
       state.selected = c.geohash; state.writeCell = null; render(); refreshPeople(0);
+    });
+    // Over the map: another area for it. A ctrl-click on a Mac is a
+    // context menu.
+    b.addEventListener("dblclick", () => mapAreaOf(c.geohash));
+    b.addEventListener("contextmenu", e => {
+      if (!overMap || !e.ctrlKey) return;
+      e.preventDefault();
+      mapAreaOf(c.geohash);
     });
     grid.append(b);
   }
@@ -712,6 +722,13 @@ function drawSaved(box) {
   const sform = el("div", "composer");
   sform.append(stext, at, repeat, plan, result);
   box.append(sform, el("p", "muted small", "Scheduled messages go out while the console runs."));
+}
+
+const overMap = window.parent !== window;
+
+// Asks the map to watch the area of `cell` (the overlay does it).
+function mapAreaOf(cell) {
+  if (overMap) window.parent.postMessage({ type: "bitchat-console:area", cell }, location.origin);
 }
 
 // Over the map (the page is in the overlay's frame): tells the map which
