@@ -12,7 +12,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 3 | Identités : graine, clé par geohash, identité Noise | ✅ |
 | 4 | Lecture : 9 cellules, connexions, abonnements, fil, changement de geohash à chaud | ✅ |
 | 5 | Écriture : messages, preuve de travail, présences, marque `teleport` | ✅ |
-| 6 | Messages privés (enveloppe BitChat `v2:`, relais par défaut) | ⬜ |
+| 6 | Messages privés (enveloppe BitChat `v2:`, relais par défaut) | ✅ |
 | 7 | Serveur web et page console | ⬜ |
 | 8 | Masquage, isolation d'un intervenant, messages préenregistrés et planifiés | ⬜ |
 | 9 | Superposition à la carte de bitchat-geohash | ⬜ |
@@ -137,15 +137,34 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
 - [x] Boucle fermée sur `relay.famillevital.club`, par Tor (Arti, lot 11) : deux consoles à
       graines jetables, message de l'une vu par l'autre en 0,11 s.
 
-### Lot 6 : messages privés ⬜
+### Lot 6 : messages privés ✅
 
-- [ ] Enveloppe BitChat : ECDH secp256k1, HKDF-SHA256, XChaCha20-Poly1305,
-      `v2:` + base64url(nonce ‖ chiffré ‖ tag), kinds 14 → 13 → 1059, clé jetable pour
-      l'enveloppe externe ; charge `bitchat1:` (`NostrEmbeddedBitChat`) avec accusés de
-      réception et de lecture.
-- [ ] Envoi depuis la clé de la cellule vers la clé du correspondant, sur les relais par
-      défaut ; abonnement `kinds:[1059]`, `#p:[clés de la console]`.
-- [ ] Vecteurs de test tirés du code Swift ; essai avec l'app de l'utilisateur.
+- [x] Enveloppe BitChat (`envelope.rs`) comme `NostrProtocol.swift` : rumor kind 14 (id vide,
+      sans signature, sans tag) → sceau kind 13 signé par la clé de la cellule → enveloppe
+      kind 1059 signée par une clé à usage unique, tag `p` du destinataire ; dates du sceau et
+      de l'enveloppe tirées à ±15 min. Chiffrement : ECDH secp256k1 (point partagé compressé,
+      33 octets, comme `P256K`), HKDF-SHA256 (sel vide, info `"nip44-v2"`),
+      XChaCha20-Poly1305, `v2:` + base64url sans remplissage. Clé du destinataire prise en Y
+      pair, les deux parités essayées à l'ouverture. Tous les contrôles de l'app à
+      l'ouverture (taille, tag `p`, signatures, forme du sceau et de la rumor, expéditeur =
+      signataire du sceau ; forme Android acceptée).
+- [x] **Vecteurs identiques à l'app** : clé HKDF et chiffré `v2:` calculés avec le
+      `XChaCha20Poly1305Compat.swift` de l'app (`tests/vectors/envelope.swift`).
+- [x] Paquets BitChat (`packet.rs`, `BinaryProtocol.swift`) : `bitchat1:` + base64url d'un
+      paquet v1 `noiseEncrypted`, sans destinataire, identifiant d'expéditeur aléatoire par
+      enveloppe, TTL 7, remplissage PKCS#7 à 256/512/1024/2048 ; lecture v1 et v2, route,
+      charge compressée (DEFLATE brut, bornée, D23). Message privé = TLV (identifiant UUID,
+      contenu ≤ 255 octets comme l'app) ; accusés `delivered` et `read`.
+- [x] Console : boîte de réception de chaque clé utilisée (9 cellules + cellules de
+      présence) sur les relais par défaut des deux apps (`kinds:[1059]`, `#p`, `since:
+      −24 h`, `limit: 100`), par le circuit de la cellule (D20) ; `send_dm(pair, cellule,
+      texte)`, accusé « délivré » envoyé aussitôt à la réception (comme l'app),
+      `mark_read(pair)` ; états `sent` → `relayed` → `delivered` → `read`, jamais en arrière.
+- [x] Tests : 2 consoles sur un relais de test (aller-retour, accusés, réponse), refus (trop
+      long, cellule non utilisée, clé invalide, vide) ; **essai réel par Tor** sur
+      `relay.famillevital.club` : DM reçu en 0,26 s, « délivré » en 0,37 s.
+- [ ] Essai avec l'app de l'utilisateur (DM de la console vers l'app et retour) : à faire
+      avec lui (lot 12).
 
 ### Lot 7 : serveur web et page ⬜
 
@@ -211,6 +230,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D20 | Isolation Tor | Une connexion par couple (relais, cellule), chacune avec son identifiant SOCKS, donc son circuit Tor : un relais ne voit sur une connexion qu'une cellule et sa clé, et ne peut pas relier les clés de deux cellules par la connexion ni par l'adresse de sortie (l'app iOS partage une connexion par relais et n'isole pas ses flux). Coût : plus de connexions — *prise par l'agent, à revoir* | ✅ |
 | D21 | Listes de relais | Téléchargées par Tor comme les relais (rien ne sort en clair), dernière copie valide en cache et utilisée en repli ; règle iOS : liste avec un hôte à deux endroits refusée — *prise par l'agent, à revoir* | ✅ |
 | D22 | Présence et téléportation | Comme l'app : en mode « sur place », présences (tag `g` seul, jamais `teleport`, comme iOS) ; en mode « téléporté », messages `t=teleport` et aucune présence (un utilisateur téléporté de l'app n'en envoie pas) — *prise par l'agent, à revoir* | ✅ |
+| D23 | Paquets compressés reçus | Lecture des charges compressées (DEFLATE brut, comme `CompressionUtil`) avec la petite crate `miniz_oxide` (hors D15), bornée en taille et en taux ; à l'envoi, pas de compression (l'app lit les deux, et rien n'en paraît hors de l'enveloppe) — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -238,3 +258,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 4 | Lecture : `nostr.rs` (repris de bitchat-geohash, signature ajoutée), `relay.rs`, `console.rs` (tâche, zone, fil, participants), `store.rs` (D16), `lists.rs` (D21). Défaut trouvé par les tests et corrigé (événement marqué vu avant validation). 23 tests, stables sur 3 lancements. Essai réel par Tor reporté (pas de `tor` installé : lot 11, Arti). |
 | 28/10/2026 | 5 | Écriture : `pow.rs` (comme `NostrPoW.swift`), `Console::send`, `set_area(g, teleport)`, présences, `OK`. 28 tests, stables sur 3 lancements ; clippy propre. Boucle fermée réelle reportée (Tor). |
 | 28/10/2026 | 11 | Feature `arti` (avancée avant le lot 6). Premier essai bloqué : le GET des listes ne partait pas (pas de `flush` après l'écriture TLS) et attendait une fin de flux que le CDN ne donne pas ; diagnostic pas à pas par Tor, deux corrections, test ajouté. Essai réel complet par Tor sur le relais de l'utilisateur : boucle fermée en 0,11 s. 29 tests (+ 2 réels `--ignored`), clippy propre avec et sans `arti`. |
+| 28/10/2026 | 6 | DM : `packet.rs`, `envelope.rs` (vecteurs identiques au code Swift de l'app), boîtes de réception, accusés. Les tests et l'essai réel n'utilisent jamais les relais par défaut réels (relais de test, ou celui de l'utilisateur). 39 tests (+ réels), clippy propre avec et sans `arti`. Essai réel par Tor : DM en 0,26 s, accusé en 0,37 s. Reste l'essai avec l'app (lot 12). |

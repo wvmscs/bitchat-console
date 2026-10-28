@@ -8,10 +8,12 @@
 pub mod arti;
 pub mod connector;
 pub mod console;
+pub mod envelope;
 mod error;
 pub mod identity;
 pub mod lists;
 pub mod nostr;
+pub mod packet;
 pub mod pow;
 pub mod relay;
 pub mod store;

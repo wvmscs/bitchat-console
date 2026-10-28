@@ -24,6 +24,11 @@ pub enum Error {
     NotInArea(String),
     #[error("empty message")]
     EmptyMessage,
+    /// The app carries at most 255 bytes of text in a private message.
+    #[error("private message too long: the app takes at most 255 bytes")]
+    DmTooLong,
+    #[error("{0:?} is not a public key (64 hex digits)")]
+    InvalidKey(String),
     /// A key file other users can read: the console refuses to use it.
     #[error("{0} can be read by other users: run `chmod 600` on it")]
     InsecureKeyFile(String),

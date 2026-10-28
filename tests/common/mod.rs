@@ -44,6 +44,8 @@ pub fn test_seed() -> Arc<bitchat_console::identity::Seed> {
 pub fn config(urls: &[String], connector: Arc<dyn Connector>) -> ConsoleConfig {
     let mut c = ConsoleConfig::new(Arc::new(strategy_of(urls)), connector, test_seed());
     c.presence = false;
+    // Never the real default relays from a test.
+    c.dm_relays = urls.to_vec();
     c
 }
 

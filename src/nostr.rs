@@ -35,6 +35,8 @@ pub enum InvalidEvent {
 /// A NIP-01 event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
+    /// Empty in a rumor (the unsigned inner event of a private message).
+    #[serde(default)]
     pub id: String,
     pub pubkey: String,
     pub created_at: i64,
@@ -223,7 +225,7 @@ pub(crate) fn hex_encode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn hex_decode(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn hex_decode(s: &str) -> Option<Vec<u8>> {
     if !s.len().is_multiple_of(2) {
         return None;
     }

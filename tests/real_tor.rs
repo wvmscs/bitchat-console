@@ -57,6 +57,8 @@ async fn closed_loop_through_tor() {
     let mk = || {
         let mut c = ConsoleConfig::new(strategy.clone(), tor.clone(), throwaway_seed());
         c.presence = false;
+        // Private messages on the user's relay too, never on the defaults.
+        c.dm_relays = vec![OWN_RELAY.to_owned()];
         Console::start(c)
     };
     let (writer, reader) = (mk(), mk());
@@ -111,8 +113,59 @@ async fn closed_loop_through_tor() {
             .any(|m| m.id == sent.id && m.relays == [OWN_RELAY]),
         "{mine:#?}"
     );
+
+    // A private message from the writer to the key the reader used in that
+    // cell, with its delivery receipt.
+    let reader_cell_key = reader_seed_key(&reader).await;
+    let t = Instant::now();
+    let dm = writer
+        .send_dm(
+            &reader_cell_key,
+            "u09tvw",
+            "bitchat-console lot 6: DM through Tor",
+        )
+        .await
+        .unwrap();
+    let mut received = false;
+    for _ in 0..300 {
+        if reader.dms().await.unwrap().iter().any(|d| d.id == dm.id) {
+            received = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(received, "the DM never arrived");
+    println!("DM received in {:.2} s", t.elapsed().as_secs_f64());
+    let mut status = None;
+    for _ in 0..300 {
+        status = writer
+            .dms()
+            .await
+            .unwrap()
+            .iter()
+            .find(|d| d.id == dm.id)
+            .and_then(|d| d.status);
+        if status == Some(bitchat_console::console::DmStatus::Delivered) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    println!(
+        "DM status after {:.2} s: {status:?}",
+        t.elapsed().as_secs_f64()
+    );
+    assert_eq!(status, Some(bitchat_console::console::DmStatus::Delivered));
     writer.shutdown().await;
     reader.shutdown().await;
+}
+
+/// The reader's key in `u09tvw`: it sends a message there, whose author is it.
+async fn reader_seed_key(reader: &Console) -> String {
+    reader
+        .send("bitchat-console lot 6: reader here", Some("u09tvw"), None)
+        .await
+        .unwrap()
+        .pubkey
 }
 
 async fn status_until_long(a: &Console, b: &Console) {
