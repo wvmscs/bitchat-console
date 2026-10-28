@@ -1,0 +1,17 @@
+[package]
+name = "bitchat-console"
+version = "0.1.0"
+edition = "2024"
+description = "BitChat console for location channels (geohash): read and write a cell and its 8 neighbours through Tor, DMs, mixed groups, in the browser."
+license = "GPL-3.0-only"
+repository = "https://github.com/wvmscs/bitchat-console"
+
+# Own workspace: the crate builds on its own, also inside the local `Nostr/`
+# directory, whose workspace does not list it.
+[workspace]
+
+[dependencies]
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "signal"] }
