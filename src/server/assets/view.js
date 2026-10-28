@@ -61,6 +61,20 @@ export function statusMark(status) {
   return { relayed: "✓", delivered: "✓✓", read: "✓✓ read" }[status] ?? "…";
 }
 
+// The last nickname each key used in the channels (messages carry it,
+// presences do not): key -> nickname.
+export function nicknames(messagesByCell) {
+  const last = new Map();
+  for (const list of Object.values(messagesByCell)) {
+    for (const m of list) {
+      if (!m.nickname || m.own) continue;
+      const was = last.get(m.pubkey);
+      if (!was || (m.received ?? 0) >= was.received) last.set(m.pubkey, { nickname: m.nickname, received: m.received ?? 0 });
+    }
+  }
+  return new Map([...last].map(([k, v]) => [k, v.nickname]));
+}
+
 // Unread private messages, all conversations.
 export function unreadTotal(dms) {
   return dms.filter(d => !d.own && !d.read).length;

@@ -3,7 +3,7 @@
 // nicknames, relay messages) only ever go through `textContent`.
 
 import {
-  author, clock, conversations, feed, gridOrder, groupTexts, isImage, linkify, people, personNote,
+  author, clock, conversations, feed, gridOrder, groupTexts, isImage, linkify, nicknames, people, personNote,
   relayCount, repeatLabel, statusMark, unixFromLocal, unreadTotal, visible,
 } from "./view.js";
 
@@ -346,6 +346,7 @@ function drawPeople(s) {
   const me = s.keys && s.keys[cell];
   const known = state.people.cell === cell ? state.people.list : [];
   const list = people(known, me, state.local.mutes);
+  const names = nicknames(state.messages);
   const box = el("div", "people");
   if (me) {
     const you = el("div", "you small", "you: " + author(saved("nickname"), me));
@@ -356,7 +357,7 @@ function drawPeople(s) {
   const now = Date.now() / 1000;
   for (const p of list) {
     const row = el("div", "row person");
-    const who = el("button", "who", author(p.nickname, p.pubkey));
+    const who = el("button", "who", author(p.nickname || names.get(p.pubkey), p.pubkey));
     who.title = "private message · " + p.pubkey;
     who.addEventListener("click", () => openConvo(p.pubkey, cell));
     row.append(who, el("span", "muted small", personNote(p, now)));
@@ -485,13 +486,15 @@ function drawDms(box) {
   const total = unreadTotal(state.dms);
   box.replaceChildren(el("h2", null, "Private messages" + (total ? ` · ${total} unread` : "")));
   const convos = conversations(state.dms);
+  const names = nicknames(state.messages);
   if (!convos.length && !state.convo) {
     box.append(el("p", "muted small", "Click a name in the feed to write to that person."));
     return;
   }
   const buttons = convos.slice().reverse().map(c => {
     const b = el("button", "convo" + (state.convo === c.key ? " on" : "") + (c.unread ? " new" : ""),
-      `#${c.peer.slice(-4)} in #${c.cell}` + (c.unread ? ` ● ${c.unread}` : ""));
+      `${author(names.get(c.peer), c.peer)} in #${c.cell}` + (c.unread ? ` ● ${c.unread}` : ""));
+    b.title = c.peer;
     b.addEventListener("click", () => openConvo(c.peer, c.cell));
     return b;
   });
@@ -509,7 +512,7 @@ function drawDms(box) {
     row.append(meta, body);
     rows.push(row);
   }
-  box.append(fold("thread", `With #${peer.slice(-4)} · your key of #${cell}`, rows, { stick: true }));
+  box.append(fold("thread", `With ${author(names.get(peer), peer)} · your key of #${cell}`, rows, { stick: true }));
   // Inviting this person to one of my groups (I am the creator).
   const mine = state.groups.groups.filter(g => g.creator_is_me);
   if (mine.length) {
@@ -745,6 +748,8 @@ function connect() {
     if (!list.some(x => x.id === m.id)) list.push(m);
     renderCells(); renderFeed();
     if (m.cell === currentCell()) refreshPeople();
+    // A correspondent's nickname, now known.
+    if (m.nickname && state.dms.some(d => d.peer === m.pubkey)) renderDms();
   });
   on("delivered", d => {
     for (const list of Object.values(state.messages)) {

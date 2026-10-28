@@ -11,6 +11,7 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- Page: a correspondent's nickname in private messages (conversations, conversation title) and in the people of a cell, when known: the last one they used in a channel message the console received (private messages and presences carry none).
 - Read private messages stay read after a restart (D29): their IDs (random UUIDs, nothing else) in `dm_read` (migration `0003_read`), forgotten after 30 days; no second read receipt.
 - Page: people of a cell in a stable order (the 4 last hex digits of their key); channel messages in arrival order (`Message::received`, the store keeps arrival order), so a late or misdated event no longer reshuffles them; a list under the pointer (people, messages, conversations) is not redrawn until the pointer leaves it, so that a name can be clicked.
 - Page: lists fold and scroll within a bounded height, open or closed as the user left them (people of the cell, relay messages, channel messages, conversations, a conversation, a group's messages). Relay messages grouped: one line per relay and text, with how many times, when last, in which cells.

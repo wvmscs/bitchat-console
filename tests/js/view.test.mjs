@@ -97,3 +97,12 @@ test("feed in arrival order", () => {
     b: [{ id: "3", created_at: 60, received: 3 }] }, ["b", "a"]);
   assert.deepEqual(f.map(m => m.id), ["1", "2", "3"]);
 });
+
+test("nicknames known from the channels", () => {
+  const n = v.nicknames({
+    a: [{ pubkey: "k1", nickname: "bob", received: 1 }, { pubkey: "k2", nickname: null, received: 2 }],
+    b: [{ pubkey: "k1", nickname: "bobby", received: 3 }, { pubkey: "me", nickname: "me", own: true, received: 4 }],
+  });
+  assert.equal(n.get("k1"), "bobby");
+  assert.equal(n.has("k2") || n.has("me"), false);
+});
