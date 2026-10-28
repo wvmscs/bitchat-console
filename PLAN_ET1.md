@@ -13,7 +13,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 4 | Lecture : 9 cellules, connexions, abonnements, fil, changement de geohash à chaud | ✅ |
 | 5 | Écriture : messages, preuve de travail, présences, marque `teleport` | ✅ |
 | 6 | Messages privés (enveloppe BitChat `v2:`, relais par défaut) | ✅ |
-| 7 | Serveur web et page console | ⬜ |
+| 7 | Serveur web et page console | ✅ |
 | 8 | Masquage, isolation d'un intervenant, messages préenregistrés et planifiés | ⬜ |
 | 9 | Superposition à la carte de bitchat-geohash | ⬜ |
 | 10 | Groupes mixtes (transport Nostr, entre consoles) | ⬜ |
@@ -166,13 +166,34 @@ Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 
 - [ ] Essai avec l'app de l'utilisateur (DM de la console vers l'app et retour) : à faire
       avec lui (lot 12).
 
-### Lot 7 : serveur web et page ⬜
+### Lot 7 : serveur web et page ✅
 
-- [ ] Serveur axum sur le modèle de bitchat-geohash (Host, Origin, CSP, SSE, HTTPS optionnel).
-- [ ] Page : fil des 9 cellules (ou d'une seule), saisie, choix de la cellule d'envoi,
-      pseudo, état des relais et de Tor, DM.
-- [ ] Données personnelles (pseudos, contenus) affichées mais jamais écrites sur disque ni
-      dans les journaux (D11).
+- [x] Serveur axum sur le modèle de bitchat-geohash (`guard.rs` et `tls.rs` repris) : `Host`
+      contrôlé, commandes `POST` en JSON avec l'`Origin` du serveur, CSP stricte (aucune
+      ressource extérieure, aucune image chargée), HTTPS optionnel (`--tls-cert`,
+      `--tls-key`) ; adresse non locale refusée sans `--allow-remote` et TLS (la page montre
+      des messages privés).
+- [x] API : `GET /api/state` (zone, messages des 9 cellules, DM, clés publiques de la
+      console par cellule), `GET /api/events` (SSE : `state`, puis `message`, `delivered`,
+      `participants`, `status`, `dm`, `dm_status`, `relay_text` ; flux en retard fermé, le
+      navigateur reprend), `POST /api/area`, `/api/send`, `/api/dm`, `/api/read` ; refus en
+      JSON avec un code.
+- [x] Page : barre (geohash, case « teleported » à chaque changement, état du flux, Tor),
+      grille des 9 cellules (participants, messages, relais connectés), fil des 9 cellules
+      ou d'une seule, saisie (cellule, pseudo, texte), messages privés (conversations par
+      interlocuteur et cellule, états `✓`/`✓✓`/`read`, accusés de lecture à l'ouverture).
+      Textes des relais par `textContent` uniquement ; liens cliquables, images jamais
+      chargées (D9), marquées 🖼.
+- [x] Ligne de commande (`main.rs`) : `<geohash> [--teleport] [--data-dir] [--tor-socks |
+      --arti] [--relays-csv] [--android-csv | --no-android] [--apps] [--dm-relays]
+      [--no-presence] [--pow-bits] [--listen] [--allow-remote] [--tls-cert --tls-key]
+      [--open] [--verbose]` ; Tor par défaut : Arti si le binaire l'a, sinon le démon (D24) ;
+      port occupé et Tor absent signalés avant tout ; codes de sortie 2 et 1.
+- [x] Tests : `tests/server.rs` (fichiers, état, `Host` 421, `Origin` 403, JSON 415, refus
+      motivés, flux SSE en direct, envoi depuis l'API, nouvel état au changement de zone),
+      `tests/js/view.test.mjs` (4 tests `node`). Essai réel : binaire avec Arti sur le seul
+      relais de l'utilisateur, page pilotée dans Chrome headless (flux en direct, 9 cellules
+      connectées, message envoyé depuis la page et accepté par le relais, console propre).
 
 ### Lot 8 : masquage et messages préenregistrés ⬜
 
@@ -231,6 +252,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D21 | Listes de relais | Téléchargées par Tor comme les relais (rien ne sort en clair), dernière copie valide en cache et utilisée en repli ; règle iOS : liste avec un hôte à deux endroits refusée — *prise par l'agent, à revoir* | ✅ |
 | D22 | Présence et téléportation | Comme l'app : en mode « sur place », présences (tag `g` seul, jamais `teleport`, comme iOS) ; en mode « téléporté », messages `t=teleport` et aucune présence (un utilisateur téléporté de l'app n'en envoie pas) — *prise par l'agent, à revoir* | ✅ |
 | D23 | Paquets compressés reçus | Lecture des charges compressées (DEFLATE brut, comme `CompressionUtil`) avec la petite crate `miniz_oxide` (hors D15), bornée en taille et en taux ; à l'envoi, pas de compression (l'app lit les deux, et rien n'en paraît hors de l'enveloppe) — *prise par l'agent, à revoir* | ✅ |
+| D24 | Tor par défaut | Arti (dans le binaire) quand le binaire est construit avec la feature `arti`, sinon le démon `tor` en SOCKS `127.0.0.1:9050` ; `--tor-socks` ou `--arti` pour choisir — *prise par l'agent, à revoir* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -259,3 +281,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 5 | Écriture : `pow.rs` (comme `NostrPoW.swift`), `Console::send`, `set_area(g, teleport)`, présences, `OK`. 28 tests, stables sur 3 lancements ; clippy propre. Boucle fermée réelle reportée (Tor). |
 | 28/10/2026 | 11 | Feature `arti` (avancée avant le lot 6). Premier essai bloqué : le GET des listes ne partait pas (pas de `flush` après l'écriture TLS) et attendait une fin de flux que le CDN ne donne pas ; diagnostic pas à pas par Tor, deux corrections, test ajouté. Essai réel complet par Tor sur le relais de l'utilisateur : boucle fermée en 0,11 s. 29 tests (+ 2 réels `--ignored`), clippy propre avec et sans `arti`. |
 | 28/10/2026 | 6 | DM : `packet.rs`, `envelope.rs` (vecteurs identiques au code Swift de l'app), boîtes de réception, accusés. Les tests et l'essai réel n'utilisent jamais les relais par défaut réels (relais de test, ou celui de l'utilisateur). 39 tests (+ réels), clippy propre avec et sans `arti`. Essai réel par Tor : DM en 0,26 s, accusé en 0,37 s. Reste l'essai avec l'app (lot 12). |
+| 28/10/2026 | 7 | Serveur, API, page, ligne de commande. 48 tests Rust, 4 `node` ; clippy propre avec et sans `arti`. Essai réel du binaire par Tor sur le relais de l'utilisateur, page dans Chrome headless. |

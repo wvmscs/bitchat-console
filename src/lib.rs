@@ -16,6 +16,7 @@ pub mod nostr;
 pub mod packet;
 pub mod pow;
 pub mod relay;
+pub mod server;
 pub mod store;
 
 pub use error::{Error, Result};

@@ -38,6 +38,11 @@ pub enum Error {
     NoRelayList { platform: String, reason: String },
     #[error("HTTP: {0}")]
     Http(String),
+    #[error("TLS: {0}")]
+    Tls(String),
+    /// A non-loopback address without `--allow-remote`.
+    #[error("listening on {0} (not a loopback address) needs --allow-remote")]
+    RemoteListen(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 }

@@ -114,6 +114,8 @@ pub struct AreaStatus {
     pub connector: String,
     /// NIP-13 target of the messages it sends.
     pub pow_bits: u32,
+    /// The console's public key in each cell it uses (public).
+    pub keys: BTreeMap<String, String>,
 }
 
 /// How far back the private-message inbox asks (iOS: 24 h).
@@ -878,6 +880,11 @@ impl State {
             teleport: self.teleport,
             connector: self.config.connector.describe(),
             pow_bits: self.config.pow_bits,
+            keys: self
+                .identities
+                .iter()
+                .filter_map(|c| Some((c.clone(), self.config.seed.cell(c).ok()?.pubkey_hex())))
+                .collect(),
         }
     }
 
