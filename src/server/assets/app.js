@@ -161,6 +161,10 @@ function buildTop() {
   ui.follow = el("button", null, "Follow");
   ui.follow.addEventListener("click", follow);
   ui.geohash.addEventListener("keydown", e => { if (e.key === "Enter") follow(); });
+  // Typed by the user: kept until followed. The field loses the focus when
+  // the button is pressed, before the click; a live update must not put the
+  // current centre back in between.
+  ui.geohash.addEventListener("input", () => { ui.edited = true; });
   ui.link = el("span", "link");
   ui.info = el("span", "muted");
   ui.error = el("span", "warn");
@@ -173,8 +177,11 @@ async function follow() {
   save("teleport", ui.teleport.checked ? "1" : "0");
   ui.error.textContent = "";
   const { ok, data } = await command("api/area", { geohash, teleport: ui.teleport.checked });
-  if (!ok) ui.error.textContent = (data && data.message) || "refused";
+  if (!ok) { ui.error.textContent = (data && data.message) || "refused"; return; }
+  ui.edited = false;
   state.selected = null;
+  state.writeCell = null;
+  refreshPeople(0);
 }
 
 function updateTop() {
@@ -182,7 +189,7 @@ function updateTop() {
   ui.link.textContent = { live: "● live", connecting: "● connecting…", reconnecting: "● reconnecting…" }[state.link];
   const s = state.status;
   if (!s) return;
-  if (s.center && document.activeElement !== ui.geohash) ui.geohash.value = s.center;
+  if (s.center && !ui.edited && document.activeElement !== ui.geohash) ui.geohash.value = s.center;
   ui.info.textContent = s.center
     ? ` #${s.center}${s.teleport ? " · teleported" : " · on site"} · ${s.connector}`
     : ` ${s.connector}`;
@@ -209,6 +216,8 @@ function drawCells(box) {
       + (c.geohash === s.center ? " center" : ""));
     const n = (state.messages[c.geohash] || []).length;
     const me = s.keys && s.keys[c.geohash];
+    b.title = "people: keys seen in the last 15 minutes (messages and presences)\n"
+      + "msgs: channel messages received since the console started (relays keep none)";
     b.append(el("b", null, "#" + c.geohash), el("span", "muted", ` ${c.participants} people`),
       el("span", "muted small", ` ${n} msgs · relays ${relayCount(c)}`));
     if (me) {
