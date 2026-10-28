@@ -312,6 +312,9 @@ impl Console {
         let (relay_tx, relay_rx) = mpsc::unbounded_channel();
         let (events, _) = broadcast::channel(1024);
         let loaded_groups = groups::load(&db);
+        if let Err(e) = db.purge_read(unix_now() - crate::db::READ_KEPT_SECS) {
+            tracing::warn!(error = %e, "cannot forget old read messages");
+        }
         let state = State {
             groups: loaded_groups,
             group_msgs: VecDeque::new(),
@@ -327,6 +330,7 @@ impl Console {
             next_presence: None,
             cells: Vec::new(),
             identities: Vec::new(),
+            arrivals: 0,
             conns: HashMap::new(),
             subs: HashMap::new(),
             dms: VecDeque::new(),
@@ -633,6 +637,8 @@ struct State {
     /// Cells whose key the console uses: the 9 cells, plus the presence
     /// cells.
     identities: Vec<String>,
+    /// Channel messages added so far: the next one's arrival rank.
+    arrivals: u64,
     conns: HashMap<(String, String), RelayHandle>,
     /// Filters sent on each connection.
     subs: HashMap<(String, String), Vec<Filter>>,
@@ -927,6 +933,7 @@ impl State {
             created_at: event.created_at,
             own: true,
             relays: Vec::new(),
+            received: self.next_arrival(),
         };
         self.store.add(message.clone());
         self.emit(ConsoleEvent::Message(message.clone()));
@@ -1044,7 +1051,11 @@ impl State {
         for d in self.dms.iter_mut().filter(|d| !d.own && d.peer == peer) {
             d.read = true;
         }
-        unread.len()
+        let ids: Vec<String> = unread.into_iter().map(|(id, _)| id).collect();
+        if let Err(e) = self.db.set_read(&ids, unix_now()) {
+            tracing::warn!(error = %e, "cannot remember read messages");
+        }
+        ids.len()
     }
 
     /// A private envelope for the key of `cell`.
@@ -1104,6 +1115,11 @@ impl State {
                 if let Ok(w) = self.envelope_to(&opened.sender, &cell, ack) {
                     self.publish_dm(&cell, &w);
                 }
+                // Read before a restart (D29): no second read receipt.
+                let read = self.db.is_read(&id).unwrap_or(false);
+                if read {
+                    self.read_sent.insert(id.clone());
+                }
                 self.keep_dm(DirectMessage {
                     id,
                     peer: opened.sender,
@@ -1112,7 +1128,7 @@ impl State {
                     created_at: opened.created_at.min(unix_now()),
                     own: false,
                     status: None,
-                    read: false,
+                    read,
                 });
             }
             t @ (packet::payload::DELIVERED | packet::payload::READ_RECEIPT) => {
@@ -1272,6 +1288,11 @@ impl State {
         }
     }
 
+    fn next_arrival(&mut self) -> u64 {
+        self.arrivals += 1;
+        self.arrivals
+    }
+
     fn participant_count(&self, cell: &str, now: i64) -> usize {
         let from = now - self.config.participant_window_secs;
         self.participants
@@ -1424,6 +1445,7 @@ impl State {
             teleport,
             own: false,
             relays: vec![relay],
+            received: self.next_arrival(),
         };
         if self.store.add(message.clone()) {
             self.emit(ConsoleEvent::Message(message));

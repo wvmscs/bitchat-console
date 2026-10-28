@@ -122,3 +122,59 @@ async fn refused_private_messages() {
     ));
     c.shutdown().await;
 }
+
+#[tokio::test]
+async fn read_stays_read_after_a_restart() {
+    // The relay keeps envelopes: after a restart they come back (D29).
+    let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
+    let dir = std::env::temp_dir().join(format!("bitchat-console-read-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bob_at = |db: &std::path::Path| {
+        let mut c = config(&[relay.url()], Arc::new(Loopback));
+        c.seed = Arc::new(Seed::from_bytes([2; 32]));
+        c.db_path = Some(db.to_owned());
+        Console::start(c)
+    };
+    let db = dir.join("console.sqlite");
+    let alice = console_with_seed(&[relay.url()], [1; 32]);
+    let bob = bob_at(&db);
+    for c in [&alice, &bob] {
+        c.set_area("u09tv", true).await.unwrap();
+        status_until(c, "connected", all_connected).await;
+    }
+    let bob_key = Seed::from_bytes([2; 32])
+        .cell("u09ty")
+        .unwrap()
+        .pubkey_hex();
+    let alice_key = Seed::from_bytes([1; 32])
+        .cell("u09ty")
+        .unwrap()
+        .pubkey_hex();
+    alice.send_dm(&bob_key, "u09ty", "one").await.unwrap();
+    alice.send_dm(&bob_key, "u09ty", "two").await.unwrap();
+    dm_until(&bob, "two messages", |d| d.len() == 2).await;
+    assert_eq!(bob.mark_read(&alice_key).await.unwrap(), 2);
+    bob.shutdown().await;
+    // A third, unread, while bob is away.
+    alice.send_dm(&bob_key, "u09ty", "three").await.unwrap();
+
+    let bob = bob_at(&db);
+    bob.set_area("u09tv", true).await.unwrap();
+    let d = dm_until(&bob, "three messages", |d| d.len() == 3).await;
+    let mut read: Vec<(String, bool)> = d.into_iter().map(|m| (m.content, m.read)).collect();
+    read.sort();
+    assert_eq!(
+        read,
+        [
+            ("one".into(), true),
+            ("three".into(), false),
+            ("two".into(), true)
+        ]
+    );
+    // Only the new one gets a read receipt.
+    assert_eq!(bob.mark_read(&alice_key).await.unwrap(), 1);
+    bob.shutdown().await;
+    alice.shutdown().await;
+    std::fs::remove_dir_all(&dir).unwrap();
+}

@@ -93,7 +93,8 @@ export function feed(messagesByCell, cells) {
       }
     }
   }
-  return out.sort((a, b) => a.created_at - b.created_at);
+  // Arrival order (the server's rank), so that nothing shown moves.
+  return out.sort((a, b) => (a.received ?? 0) - (b.received ?? 0) || a.created_at - b.created_at);
 }
 
 // Relays of a cell that are connected, out of all.
@@ -102,10 +103,12 @@ export function relayCount(cell) {
   return `${up}/${cell.relays.length}`;
 }
 
-// People of a cell as listed: everyone but me, the muted after the others
-// (the server sends the most recent first).
+// People of a cell as listed: everyone but me, by the 4 last hex digits of
+// their key (as the app shows them; a stable order), the muted after.
 export function people(list, me, mutes) {
-  const others = list.filter(p => p.pubkey !== me);
+  const key = p => p.pubkey.slice(-4) + p.pubkey;
+  const others = list.filter(p => p.pubkey !== me)
+    .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
   return [...others.filter(p => !mutes.includes(p.pubkey)), ...others.filter(p => mutes.includes(p.pubkey))];
 }
 

@@ -1,6 +1,7 @@
 //! Local storage (lot 8, D16): SQLite in the data directory, for what the
-//! user decides only: muted keys, saved messages, schedules. Never received
-//! contents or nicknames (D11, D25). Append-only numbered migrations, as in
+//! user decides only: muted keys, saved messages, schedules, groups, the IDs
+//! of the private messages read (D29). Never received contents, nicknames
+//! or the keys of others, mutes aside (D11, D25). Append-only numbered migrations, as in
 //! bitchat-geohash.
 
 use std::path::Path;
@@ -13,7 +14,12 @@ use crate::error::{Error, Result};
 const MIGRATIONS: &[(&str, &str)] = &[
     ("0001_init", include_str!("migrations/0001_init.sql")),
     ("0002_groups", include_str!("migrations/0002_groups.sql")),
+    ("0003_read", include_str!("migrations/0003_read.sql")),
 ];
+
+/// How long a read private message is remembered (relays rarely keep
+/// envelopes longer).
+pub const READ_KEPT_SECS: i64 = 30 * 24 * 3600;
 /// Schema version this code writes.
 pub const SCHEMA_VERSION: u32 = MIGRATIONS.len() as u32;
 /// File of the database, in the data directory.
@@ -279,6 +285,38 @@ impl Db {
     }
 }
 
+impl Db {
+    /// Remembers private messages as read (D29).
+    pub fn set_read(&self, ids: &[String], at: i64) -> Result<()> {
+        for id in ids {
+            self.conn
+                .execute(
+                    "INSERT OR IGNORE INTO dm_read (id, at) VALUES (?1, ?2)",
+                    params![id, at],
+                )
+                .map_err(sql)?;
+        }
+        Ok(())
+    }
+
+    pub fn is_read(&self, id: &str) -> Result<bool> {
+        self.conn
+            .query_row("SELECT 1 FROM dm_read WHERE id = ?1", params![id], |_| {
+                Ok(())
+            })
+            .optional()
+            .map(|r| r.is_some())
+            .map_err(sql)
+    }
+
+    /// Forgets what was read before `before`.
+    pub fn purge_read(&self, before: i64) -> Result<usize> {
+        self.conn
+            .execute("DELETE FROM dm_read WHERE at < ?1", params![before])
+            .map_err(sql)
+    }
+}
+
 fn sql(e: rusqlite::Error) -> Error {
     Error::Db(e.to_string())
 }
@@ -286,6 +324,18 @@ fn sql(e: rusqlite::Error) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_private_messages() {
+        let db = Db::open_in_memory().unwrap();
+        assert!(!db.is_read("a").unwrap());
+        db.set_read(&["a".into(), "b".into()], 100).unwrap();
+        db.set_read(&["a".into()], 500).unwrap();
+        assert!(db.is_read("a").unwrap() && db.is_read("b").unwrap());
+        // Kept from the first time.
+        assert_eq!(db.purge_read(101).unwrap(), 2);
+        assert!(!db.is_read("a").unwrap());
+    }
 
     #[test]
     fn mutes_presets_schedules() {

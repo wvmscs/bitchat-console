@@ -24,6 +24,9 @@ pub struct Message {
     pub own: bool,
     /// Relays that delivered (or accepted) it.
     pub relays: Vec<String>,
+    /// Arrival rank in this console, across cells: the feed's order, which
+    /// a late or misdated event cannot reshuffle.
+    pub received: u64,
 }
 
 /// Storage of the messages of the followed cells.
@@ -32,7 +35,7 @@ pub trait MessageStore: Send {
     fn add(&mut self, message: Message) -> bool;
     /// Notes that another relay delivered (or accepted) a known message.
     fn add_relay(&mut self, id: &str, relay: &str);
-    /// Messages of a cell, oldest first.
+    /// Messages of a cell, in arrival order.
     fn cell(&self, cell: &str) -> Vec<Message>;
     /// Drops what is older than `before` (Unix time).
     fn purge(&mut self, before: i64);
@@ -59,9 +62,8 @@ impl MessageStore for MemoryStore {
         if q.iter().any(|m| m.id == message.id) {
             return false;
         }
-        // Kept in created_at order: relays deliver stored events late.
-        let at = q.partition_point(|m| m.created_at <= message.created_at);
-        q.insert(at, message);
+        // Arrival order: what is shown does not move when a late one comes.
+        q.push_back(message);
         while q.len() > self.per_cell {
             q.pop_front();
         }
@@ -109,6 +111,7 @@ mod tests {
             teleport: false,
             own: false,
             relays: vec!["wss://a".into()],
+            received: at as u64,
         }
     }
 
@@ -120,11 +123,12 @@ mod tests {
         assert!(s.add(msg("3", "u09tv", 30)));
         assert!(s.add(msg("2", "u09tv", 20)));
         assert!(s.add(msg("4", "u09tv", 40)));
+        // In arrival order, the oldest arrivals dropped first.
         let ids: Vec<String> = s.cell("u09tv").into_iter().map(|m| m.id).collect();
-        assert_eq!(ids, ["2", "3", "4"]);
+        assert_eq!(ids, ["3", "2", "4"]);
         s.add_relay("3", "wss://b");
         s.add_relay("3", "wss://b");
-        assert_eq!(s.cell("u09tv")[1].relays, ["wss://a", "wss://b"]);
+        assert_eq!(s.cell("u09tv")[0].relays, ["wss://a", "wss://b"]);
         s.purge(35);
         assert_eq!(s.cell("u09tv").len(), 1);
         assert!(s.cell("u09tw").is_empty());

@@ -11,6 +11,8 @@
 - Relay list download: the request is flushed after the TLS write (it never left), and the body is read up to `Content-Length` (CDNs keep the connection open).
 
 ### Added
+- Read private messages stay read after a restart (D29): their IDs (random UUIDs, nothing else) in `dm_read` (migration `0003_read`), forgotten after 30 days; no second read receipt.
+- Page: people of a cell in a stable order (the 4 last hex digits of their key); channel messages in arrival order (`Message::received`, the store keeps arrival order), so a late or misdated event no longer reshuffles them; a list under the pointer (people, messages, conversations) is not redrawn until the pointer leaves it, so that a name can be clicked.
 - Page: lists fold and scroll within a bounded height, open or closed as the user left them (people of the cell, relay messages, channel messages, conversations, a conversation, a group's messages). Relay messages grouped: one line per relay and text, with how many times, when last, in which cells.
 - Page: sound (two short tones, can be turned off: 🔔 in the top bar) on a new private message, unless its conversation is open and shown; unread count in the top bar (✉, opens the first), in the tab title and on each conversation; "✓✓ read" stands out on sent messages. `DirectMessage::read` (set when the read receipt is sent).
 - NIP-42 (D28): a relay's AUTH challenge is answered with the connection's own key (the cell's, or the group's); the subscription and the publications refused with `auth-required:` are sent again, once. A refusal after authentication (whitelist) is final; a refused AUTH gives the relay up. "authenticated (NIP-42)" in the relay messages. Test relay with NIP-42 modes (`tests/auth.rs`).

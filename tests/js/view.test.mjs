@@ -56,6 +56,10 @@ test("people of a cell", () => {
     { pubkey: "dd04", nickname: "eve", last_seen: 70, teleport: false, messages: 1 },
   ];
   assert.deepEqual(v.people(list, "me00", ["aa01"]).map(p => p.pubkey), ["cc03", "dd04", "aa01"]);
+  // By the last 4 hex digits, whatever the server's order.
+  const keys = ["ff0002", "000003", "aa0001"].map(pubkey => ({ pubkey }));
+  assert.deepEqual(v.people(keys, null, []).map(p => p.pubkey), ["aa0001", "ff0002", "000003"]);
+  assert.deepEqual(v.people(keys.slice().reverse(), null, []).map(p => p.pubkey), ["aa0001", "ff0002", "000003"]);
   const now = 100;
   assert.match(v.personNote(list[0], now), / · teleported · 2 msgs$/);
   assert.match(v.personNote(list[3], now), /\d · 1 msg$/);
@@ -85,4 +89,11 @@ test("relay messages grouped", () => {
   ]);
   assert.deepEqual(g.map(x => [x.relay, x.count, x.cells.join(","), x.last]),
     [["wss://a", 3, "u09tv,u09ty", 4], ["wss://b", 1, "u09tv", 2]]);
+});
+
+test("feed in arrival order", () => {
+  // A late message with an old date stays where it arrived.
+  const f = v.feed({ a: [{ id: "1", created_at: 50, received: 1 }, { id: "2", created_at: 10, received: 2 }],
+    b: [{ id: "3", created_at: 60, received: 3 }] }, ["b", "a"]);
+  assert.deepEqual(f.map(m => m.id), ["1", "2", "3"]);
 });

@@ -70,9 +70,13 @@ function selecting(box) {
     && box.contains(s.getRangeAt(0).commonAncestorContainer);
 }
 
+// The pointer is over a list that must not move under it (a name about to
+// be clicked).
+const hovering = box => !!box.querySelector("[data-hold]:hover");
+
 function keep(id, draw) {
   const box = document.getElementById(id);
-  if (pressed || selecting(box)) { later.set(id, draw); return; }
+  if (pressed || selecting(box) || hovering(box)) { later.set(id, draw); return; }
   later.delete(id);
   const values = new Map();
   // Inputs keep their value, messages beside them their text.
@@ -118,10 +122,12 @@ for (const name of ["pointerup", "pointercancel"]) {
   document.addEventListener(name, () => { pressed = false; setTimeout(flush, 0); }, true);
 }
 document.addEventListener("selectionchange", () => { if (later.size) flush(); });
+// Leaving a held list: catch up.
+document.addEventListener("pointerout", () => { if (later.size) setTimeout(flush, 0); }, true);
 
 /// A list that folds (as the user left it) and scrolls within a bounded
 /// height, so that no list takes the whole panel.
-function fold(key, title, items, { open = true, stick = false } = {}) {
+function fold(key, title, items, { open = true, stick = false, hold = false } = {}) {
   const d = el("details", "fold");
   const was = saved("fold:" + key);
   d.open = was ? was === "1" : open;
@@ -129,6 +135,7 @@ function fold(key, title, items, { open = true, stick = false } = {}) {
   const body = el("div", "scroll");
   body.dataset.scroll = key;
   if (stick) body.dataset.stick = "";
+  if (hold) body.dataset.hold = "";
   body.append(...items);
   d.append(el("summary", null, title), body);
   return d;
@@ -365,7 +372,7 @@ function drawPeople(s) {
     rows.push(row);
   }
   if (!list.length) rows.push(el("p", "muted small", "Nobody else seen here in the last 15 minutes."));
-  box.append(fold("people", `In #${cell} · ${list.length} other${list.length === 1 ? "" : "s"}`, rows));
+  box.append(fold("people", `In #${cell} · ${list.length} other${list.length === 1 ? "" : "s"}`, rows, { hold: true }));
   return box;
 }
 
@@ -423,7 +430,7 @@ function drawFeed(box) {
   }
   const n = list.querySelectorAll(".msg").length;
   box.append(fold("feed", `Messages · ${n}${state.selected ? " in #" + state.selected : " in the 9 cells"}`,
-    [list], { stick: true }), composer());
+    [list], { stick: true, hold: true }), composer());
 }
 
 function composer() {
@@ -488,7 +495,7 @@ function drawDms(box) {
     b.addEventListener("click", () => openConvo(c.peer, c.cell));
     return b;
   });
-  box.append(fold("convos", `Conversations (${convos.length})`, buttons));
+  box.append(fold("convos", `Conversations (${convos.length})`, buttons, { hold: true }));
   if (!state.convo) return;
   const [peer, cell] = state.convo.split("|");
   const convo = convos.find(c => c.key === state.convo);
