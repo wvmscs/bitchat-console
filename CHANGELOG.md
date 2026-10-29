@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+- `geohash-relays` fetched over HTTPS at its tag `v0.1.0` (was SSH, branch `main`): the crate builds without a GitHub SSH key once the repositories are public.
+- `tests/real_tor.rs` writes only to the relay named by `BITCHAT_TEST_RELAY`, and skips without it (no relay written in the code).
+
+### Added
+- Opening to the public: `SECURITY.md` (private reports), `CONTRIBUTING.md` (rebased pull requests, licence, offline tests), issue and pull request templates, CI (fmt, clippy, tests, page helpers, `arti` build, `cargo deny`), `deny.toml`, Dependabot; actions pinned by commit.
+
 ## [0.1.0] - 2026-10-29
 
 ### Fixed

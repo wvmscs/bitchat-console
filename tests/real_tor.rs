@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 William VITAL, FR (wvmscs)
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-//! Real network, through Tor, on the user's relay only
-//! (`wss://relay.famillevital.club`, authorised for tests) with throwaway
-//! seeds. Not run by default:
+//! Real network, through Tor, on one relay you run (or may write test events
+//! to), given by `BITCHAT_TEST_RELAY`, with throwaway seeds. Not run by
+//! default, and skipped when `BITCHAT_TEST_RELAY` is not set:
 //!
-//!   cargo test --features arti --test real_tor -- --ignored --nocapture
-//!   BITCHAT_TOR_SOCKS=127.0.0.1:9050 cargo test --test real_tor -- --ignored --nocapture
+//!   BITCHAT_TEST_RELAY=wss://relay.example cargo test --features arti --test real_tor -- --ignored --nocapture
+//!   BITCHAT_TEST_RELAY=wss://relay.example BITCHAT_TOR_SOCKS=127.0.0.1:9050 cargo test --test real_tor -- --ignored --nocapture
 //!
 //! With `BITCHAT_TOR_SOCKS`, a Tor daemon's SOCKS port is used instead of Arti.
 
@@ -22,7 +22,9 @@ use bitchat_console::lists::fetch;
 use common::*;
 use geohash_relays::{Platform, RelayDirectory};
 
-const OWN_RELAY: &str = "wss://relay.famillevital.club";
+/// The relay the test writes to: never a default one, so that nobody
+/// publishes test events on a relay they did not choose.
+const TEST_RELAY_ENV: &str = "BITCHAT_TEST_RELAY";
 
 fn throwaway_seed() -> Arc<Seed> {
     let mut b = [0u8; 32];
@@ -33,6 +35,10 @@ fn throwaway_seed() -> Arc<Seed> {
 #[tokio::test]
 #[ignore]
 async fn closed_loop_through_tor() {
+    let Ok(own_relay) = std::env::var(TEST_RELAY_ENV) else {
+        println!("skipped: set {TEST_RELAY_ENV} to a relay you may write test events to");
+        return;
+    };
     bitchat_console::install_crypto_provider();
     let _ = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -54,12 +60,12 @@ async fn closed_loop_through_tor() {
     assert!(ios.len() > 100);
 
     // Two consoles on the user's relay only: one writes, one reads.
-    let strategy = Arc::new(strategy_of(&[OWN_RELAY.to_owned()]));
+    let strategy = Arc::new(strategy_of(std::slice::from_ref(&own_relay)));
     let mk = || {
         let mut c = ConsoleConfig::new(strategy.clone(), tor.clone(), throwaway_seed());
         c.presence = false;
         // Private messages on the user's relay too, never on the defaults.
-        c.dm_relays = vec![OWN_RELAY.to_owned()];
+        c.dm_relays = vec![own_relay.clone()];
         let mut n = [0u8; 32];
         rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut n);
         c.noise = Some(Arc::new(
@@ -116,7 +122,7 @@ async fn closed_loop_through_tor() {
     let mine = writer.messages("u09tvw").await.unwrap();
     assert!(
         mine.iter()
-            .any(|m| m.id == sent.id && m.relays == [OWN_RELAY]),
+            .any(|m| m.id == sent.id && m.relays == [own_relay.as_str()]),
         "{mine:#?}"
     );
 

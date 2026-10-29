@@ -55,7 +55,8 @@ other decisions are in [PLAN_ET1.md](PLAN_ET1.md).
 - Connect to a relay without Tor (D1). A direct connection is allowed only to a loopback
   address, and only in tests.
 - Publish anything on public relays or real channels from tests or by agents. Closed-loop
-  tests use `wss://relay.famillevital.club` only, with a throwaway seed. Real publishing is
+  tests use only the relay given by `BITCHAT_TEST_RELAY` (the user's own relay), with a
+  throwaway seed. Real publishing is
   for the user's own actions in the console.
 - Write received message contents, nicknames or pubkeys to logs, or to disk anywhere but
   `history.sqlite` (D31, `0600`), which replaces D11 and the memory-only rule of D16.

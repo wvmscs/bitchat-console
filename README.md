@@ -72,8 +72,8 @@ never loaded. With `--map`, the map tiles are loaded by the browser directly, no
 ```sh
 cargo test                                   # offline: local relays, local SOCKS proxy
 node --test tests/js/*.mjs                    # page helpers
-cargo test --release --features arti --test real_tor -- --ignored --nocapture   # real, through Tor
-BITCHAT_TOR_SOCKS=127.0.0.1:9050 cargo test --release --test real_tor -- --ignored --nocapture  # same, Tor daemon
+BITCHAT_TEST_RELAY=wss://your.relay cargo test --release --features arti --test real_tor -- --ignored --nocapture   # real, through Tor, on a relay you choose
+BITCHAT_TEST_RELAY=wss://your.relay BITCHAT_TOR_SOCKS=127.0.0.1:9050 cargo test --release --test real_tor -- --ignored --nocapture  # same, Tor daemon
 ```
 
 The real test publishes only on the relay named in it, with throwaway keys.
