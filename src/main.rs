@@ -6,7 +6,7 @@
 //!
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
-//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android]
+//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
@@ -28,11 +28,11 @@ use bitchat_console::console::{Console, ConsoleConfig};
 use bitchat_console::identity::Keys;
 use bitchat_console::lists::{ListSource, load};
 use bitchat_console::server::{ServerConfig, TlsFiles, serve};
-use geohash_relays::{AppStrategy, Apps, Platform};
+use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
-     [--android-csv <url|path> | --no-android] [--apps both|ios|android] \
+     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
@@ -53,6 +53,8 @@ struct Args {
     ios: ListSource,
     android: Option<ListSource>,
     apps: Apps,
+    /// The relay strategy (`AS` by default).
+    strategy: bitchat_console::strategies::Name,
     /// Relays of private messages; `None`: the apps' defaults.
     dm_relays: Option<Vec<String>>,
     presence: bool,
@@ -90,6 +92,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         ios: ListSource::official(Platform::Ios),
         android: Some(ListSource::official(Platform::Android)),
         apps: Apps::Both,
+        strategy: bitchat_console::strategies::Name::As,
         dm_relays: None,
         presence: true,
         history: true,
@@ -123,6 +126,15 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--relays-csv" => a.ios = ListSource::parse(&value()?),
             "--android-csv" => a.android = Some(ListSource::parse(&value()?)),
             "--no-android" => a.android = None,
+            "--strategy" => {
+                let v = value()?;
+                a.strategy = bitchat_console::strategies::Name::parse(&v).ok_or_else(|| {
+                    format!(
+                        "--strategy: one of {}, got {v:?}",
+                        bitchat_console::strategies::Name::ALL
+                    )
+                })?;
+            }
             "--apps" => {
                 a.apps = match value()?.as_str() {
                     "both" => Apps::Both,
@@ -265,7 +277,12 @@ async fn main() {
         ),
         None => None,
     };
-    let strategy = Arc::new(AppStrategy::new(Some(ios), android, args.apps));
+    let inputs = bitchat_console::strategies::Inputs {
+        ios,
+        android,
+        apps: args.apps,
+    };
+    let strategy = bitchat_console::strategies::build(args.strategy, &inputs);
     let mut config = ConsoleConfig::new(strategy, tor, Arc::new(keys.seed));
     config.noise = Some(Arc::new(keys.noise));
     config.presence = args.presence;

@@ -296,6 +296,7 @@ pub enum ConsoleEvent {
 
 enum Command {
     SetArea(String, bool, oneshot::Sender<Result<Vec<String>>>),
+    SetStrategy(Arc<dyn Strategy>, oneshot::Sender<Result<()>>),
     Publish(Box<Event>, oneshot::Sender<Result<Message>>),
     SendDm {
         peer: String,
@@ -634,6 +635,12 @@ impl Console {
         self.ask(|r| Command::Messages(c, r)).await
     }
 
+    /// Replaces the relay strategy: the connections of the area follow at
+    /// once, as for a change of area (only those that change move).
+    pub async fn set_strategy(&self, strategy: Arc<dyn Strategy>) -> Result<()> {
+        self.ask(|r| Command::SetStrategy(strategy, r)).await?
+    }
+
     pub async fn status(&self) -> Result<AreaStatus> {
         self.ask(Command::Status).await
     }
@@ -835,6 +842,15 @@ impl State {
         match c {
             Command::SetArea(g, teleport, reply) => {
                 let _ = reply.send(self.set_area(&g, teleport));
+            }
+            Command::SetStrategy(strategy, reply) => {
+                tracing::info!(strategy = %strategy.describe(), "strategy set");
+                self.config.strategy = strategy;
+                let r = match self.center.clone() {
+                    Some(g) => self.set_area(&g, self.teleport).map(|_| ()),
+                    None => Ok(()),
+                };
+                let _ = reply.send(r);
             }
             Command::Publish(event, reply) => {
                 let _ = reply.send(self.publish_message(*event));

@@ -62,6 +62,23 @@ pub enum Error {
     RemoteListen(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
+    /// Any other error of the communication crate.
+    #[error("{0}")]
+    Net(String),
+}
+
+impl From<geohash_relays_net::Error> for Error {
+    fn from(e: geohash_relays_net::Error) -> Self {
+        use geohash_relays_net::Error as N;
+        match e {
+            N::TorUnavailable(at) => Error::TorUnavailable(at),
+            N::Tor(m) => Error::Tor(m),
+            N::NoRelayList { platform, reason } => Error::NoRelayList { platform, reason },
+            N::Http(m) => Error::Http(m),
+            N::Io(e) => Error::Io(e),
+            other => Error::Net(other.to_string()),
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

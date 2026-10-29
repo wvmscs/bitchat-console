@@ -361,12 +361,12 @@ dependencies = [
 name = "bitchat-console"
 version = "0.1.0"
 dependencies = [
- "arti-client",
  "axum",
  "chacha20poly1305",
  "ed25519-dalek",
  "futures-util",
  "geohash-relays",
+ "geohash-relays-net",
  "hkdf",
  "hmac",
  "http-body-util",
@@ -385,7 +385,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
- "tor-rtcompat",
  "tracing",
  "tracing-subscriber",
  "webpki-roots 1.0.11",
@@ -1533,9 +1532,32 @@ dependencies = [
 [[package]]
 name = "geohash-relays"
 version = "0.1.0"
-source = "git+https://github.com/wvmscs/geohash-relays.git?tag=v0.1.0#3ad82c51d31be05088872fe76fe5fb25c8ce49ba"
+source = "git+https://github.com/wvmscs/geohash-relays.git?branch=strategies#76543513b88f5733ff6509da44b40c325e4963ac"
 dependencies = [
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "geohash-relays-net"
+version = "0.1.0"
+source = "git+https://github.com/wvmscs/geohash-relays-net.git?branch=main#882c266a1187530b783f9f550eeddb5b68694dad"
+dependencies = [
+ "arti-client",
+ "futures-util",
+ "geohash-relays",
+ "k256",
+ "rand_core 0.6.4",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tor-rtcompat",
+ "tracing",
+ "webpki-roots 1.0.11",
 ]
 
 [[package]]

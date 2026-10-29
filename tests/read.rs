@@ -172,3 +172,25 @@ async fn each_cell_gets_its_own_circuit() {
     assert!(users.contains(&"bitchat-console/u09tv".to_owned()));
     c.shutdown().await;
 }
+
+#[tokio::test]
+async fn the_strategy_changes_on_the_fly() {
+    let (a, b) = (
+        TestRelay::spawn("127.0.0.1:0").await.unwrap(),
+        TestRelay::spawn("127.0.0.1:0").await.unwrap(),
+    );
+    let c = console(&[a.url()], Arc::new(Loopback));
+    c.set_area("u09tv", false).await.unwrap();
+    status_until(&c, "connected to a", all_connected).await;
+    c.set_strategy(Arc::new(strategy_of(&[b.url()])))
+        .await
+        .unwrap();
+    let s = status_until(&c, "moved to b", |s| {
+        all_connected(s)
+            && s.cells
+                .iter()
+                .all(|cell| cell.relays.iter().all(|r| r.url == b.url()))
+    })
+    .await;
+    assert_eq!(s.center.as_deref(), Some("u09tv"));
+}

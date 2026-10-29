@@ -3,6 +3,16 @@
 ## [Unreleased]
 
 ### Changed
+- The communication (`connector`, `relay`, `nostr`, `lists`, `arti`) moved to the crate
+  `geohash-relays-net` (feature `console`), GPL-3.0-or-later, re-exported under the same
+  paths; its tests moved with it. `geohash-relays` followed on its `strategies` branch
+  (lot 0 of its `PLAN_ET1.md`).
+
+### Added
+- `Console::set_strategy`: the relay strategy changes on the fly, the connections follow.
+- `--strategy AS` (the alternatives of geohash-relays as they come), module `strategies`.
+
+### Changed
 - `geohash-relays` fetched over HTTPS at its tag `v0.1.0` (was SSH, branch `main`): the crate builds without a GitHub SSH key once the repositories are public.
 - `tests/real_tor.rs` writes only to the relay named by `BITCHAT_TEST_RELAY`, and skips without it (no relay written in the code).
 
