@@ -6,7 +6,7 @@
 //!
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
-//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--qualify | --qualify-probe]
+//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--announce-relays] [--qualify | --qualify-probe]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
@@ -32,7 +32,7 @@ use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
-     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--qualify | --qualify-probe] \
+     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--announce-relays] [--qualify | --qualify-probe] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
@@ -55,6 +55,8 @@ struct Args {
     apps: Apps,
     /// Republish between the iOS and Android relay sets (A4).
     republish: bool,
+    /// Announce the relays written to in presences, read the announced ones (A3).
+    announce: bool,
     /// A0: shared relays added to every cell.
     shared_relays: usize,
     /// A1: the salt of the rendezvous hashing.
@@ -106,6 +108,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         apps: Apps::Both,
         strategy: bitchat_console::strategies::Name::As,
         republish: false,
+        announce: false,
         shared_relays: 0,
         salt: None,
         monitors: Default::default(),
@@ -172,6 +175,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             }
             "--no-presence" => a.presence = false,
             "--republish" => a.republish = true,
+            "--announce-relays" => a.announce = true,
             "--qualify" => a.qualify = Some(false),
             "--qualify-probe" => a.qualify = Some(true),
             "--monitors" => {
@@ -414,6 +418,7 @@ async fn main() {
     let connector = tor.clone();
     let mut config = ConsoleConfig::new(strategy, tor, Arc::new(keys.seed));
     config.rebuild = rebuild;
+    config.announce = args.announce;
     config.noise = Some(Arc::new(keys.noise));
     config.presence = args.presence;
     let db_path = args.data_dir.join(bitchat_console::db::DB_FILE);

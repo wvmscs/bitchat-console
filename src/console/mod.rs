@@ -18,6 +18,8 @@ use std::time::Duration;
 
 use rand_core::{OsRng, RngCore};
 
+use geohash_relays::a3::{Announced, PresenceBook, announce_tags};
+use geohash_relays::params::A3_MIN_POW_BITS;
 use geohash_relays::{Health, RelayHealth, Strategy, normalize_url};
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -55,6 +57,9 @@ pub struct ConsoleConfig {
     /// With a strategy that replaces failed relays: how to rebuild it when
     /// relays fail or come back. `None`: the strategy stays as it is.
     pub rebuild: Option<Rebuild>,
+    /// A3 of geohash-relays: presences name the relays the console writes
+    /// to (with proof of work), and the relays the cell announces are read.
+    pub announce: bool,
     pub connector: Arc<dyn Connector>,
     /// Root of the cell keys.
     pub seed: Arc<Seed>,
@@ -96,6 +101,7 @@ impl ConsoleConfig {
         ConsoleConfig {
             strategy,
             rebuild: None,
+            announce: false,
             connector,
             seed,
             pow_bits: crate::pow::TARGET_BITS,
@@ -382,6 +388,7 @@ impl Console {
         if let Err(e) = db.purge_read(unix_now() - crate::db::READ_KEPT_SECS) {
             tracing::warn!(error = %e, "cannot forget old read messages");
         }
+        let base = config.strategy.clone();
         let state = State {
             groups: loaded_groups,
             group_msgs: VecDeque::new(),
@@ -406,6 +413,9 @@ impl Console {
             read_sent: HashSet::new(),
             states: HashMap::new(),
             health: HashMap::new(),
+            base,
+            book: PresenceBook::default(),
+            book_changed: false,
             seen: Seen::default(),
             participants: HashMap::new(),
             relay_tx,
@@ -811,6 +821,12 @@ struct State {
     /// Channel relays found failed, and since when (Unix seconds); forgotten
     /// after `A0_HEALTH_TTL_SECS`, then tried again.
     health: HashMap<String, (Health, i64)>,
+    /// The strategy before the announced relays (A3) are added.
+    base: Arc<dyn Strategy>,
+    /// A3: announcements seen in the cells' presences, and whether they
+    /// changed since the strategy was last rebuilt.
+    book: PresenceBook,
+    book_changed: bool,
     seen: Seen,
     /// cell -> key -> last seen.
     participants: HashMap<String, HashMap<String, Known>>,
@@ -861,7 +877,8 @@ impl State {
             }
             Command::SetStrategy(strategy, reply) => {
                 tracing::info!(strategy = %strategy.describe(), "strategy set");
-                self.config.strategy = strategy;
+                self.base = strategy;
+                self.config.strategy = self.wrapped();
                 let r = match self.center.clone() {
                     Some(g) => self.set_area(&g, self.teleport).map(|_| ()),
                     None => Ok(()),
@@ -1443,14 +1460,28 @@ impl State {
             let Ok(key) = self.config.seed.cell(&cell) else {
                 continue;
             };
-            // Exactly the app's presence: `g` only, empty content.
-            let e = Event::signed(
-                key.signing_key(),
-                unix_now(),
-                KIND_PRESENCE,
-                vec![vec!["g".to_owned(), cell.clone()]],
-                String::new(),
-            );
+            // Exactly the app's presence: `g` only, empty content; with A3,
+            // the relays it writes to, and a proof of work.
+            let now = unix_now();
+            let mut tags = vec![vec!["g".to_owned(), cell.clone()]];
+            if self.config.announce {
+                let relays: Vec<String> = self
+                    .config
+                    .strategy
+                    .write(&cell)
+                    .map(|v| v.into_iter().map(|s| s.relay.url).collect())
+                    .unwrap_or_default();
+                tags.extend(announce_tags(&relays));
+                tags = crate::pow::mine(
+                    &key.pubkey_hex(),
+                    now,
+                    KIND_PRESENCE,
+                    &tags,
+                    "",
+                    A3_MIN_POW_BITS,
+                );
+            }
+            let e = Event::signed(key.signing_key(), now, KIND_PRESENCE, tags, String::new());
             self.seen.insert(&e.id);
             let _ = self.publish(&cell, &e);
         }
@@ -1666,6 +1697,17 @@ impl State {
             return;
         }
         self.seen.insert(&event.id);
+        if self.config.announce && event.kind == KIND_PRESENCE {
+            let now = unix_now();
+            let before = self.book.announced(&cell, now);
+            if self.book.record(&cell, &event.meta()) {
+                self.book_changed = true;
+                // A relay announced by enough keys now: follow it at once.
+                if self.book.announced(&cell, now) != before {
+                    self.on_new_announcements();
+                }
+            }
+        }
         let now = unix_now();
         // A date in the future is taken as now, as iOS does.
         let at = event.created_at.min(now);
@@ -1813,6 +1855,32 @@ impl State {
         }
     }
 
+    /// A3: the announced relays changed: the strategy and the connections
+    /// follow.
+    fn on_new_announcements(&mut self) {
+        self.book_changed = false;
+        self.config.strategy = self.wrapped();
+        if let Some(g) = self.center.clone() {
+            let teleport = self.teleport;
+            if let Err(e) = self.set_area(&g, teleport) {
+                tracing::warn!(error = %e, "area not followed after new announcements");
+            }
+        }
+    }
+
+    /// The base strategy, with the announced relays when A3 is on.
+    fn wrapped(&self) -> Arc<dyn Strategy> {
+        if self.config.announce {
+            Arc::new(Announced::new(
+                self.base.clone(),
+                self.book.clone(),
+                unix_now(),
+            ))
+        } else {
+            self.base.clone()
+        }
+    }
+
     fn rebuild_strategy(&mut self) {
         let Some(rebuild) = self.config.rebuild.clone() else {
             return;
@@ -1823,7 +1891,8 @@ impl State {
             .map(|(u, (h, _))| (u.clone(), *h))
             .collect();
         tracing::info!(failed = health.len(), "relays failed: strategy rebuilt");
-        self.config.strategy = rebuild(&health);
+        self.base = rebuild(&health);
+        self.config.strategy = self.wrapped();
         if let Some(g) = self.center.clone() {
             let teleport = self.teleport;
             if let Err(e) = self.set_area(&g, teleport) {
@@ -1841,6 +1910,10 @@ impl State {
             .retain(|_, (_, since)| now - *since < geohash_relays::params::A0_HEALTH_TTL_SECS);
         if self.health.len() != before {
             self.rebuild_strategy();
+        }
+        if self.book_changed {
+            self.book.prune(now);
+            self.on_new_announcements();
         }
         let from = now - self.config.participant_window_secs;
         for people in self.participants.values_mut() {

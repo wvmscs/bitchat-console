@@ -21,6 +21,9 @@
   trusted NIP-66 monitors, read through Tor at start: its candidates feed A1, its shared
   verdicts filter the lists (unless they would remove more than half); kept in `monitors.csv`
   and used when the monitors cannot be read. Module `monitors`.
+- `--announce-relays` (lot 7 of geohash-relays, A3): presences also name the relays the console
+  writes to (`["relay", url]`, proof of work 8; the apps ignore the extra tags), and the relays
+  two keys of a cell announce are read and written too, at once. `ConsoleConfig::announce`.
 - `--qualify` and `--qualify-probe` (lot 4 of geohash-relays, A6): the relays of both lists
   against the requirements, through Tor: NIP-11 declarations, and with `--qualify-probe` one
   kind 20000 test event per relay in the probe cell (open sea, throwaway key), delivered live
