@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-29
+
 ### Fixed
 - `bitchat-history wipe` (`history::wipe`): the WAL and shared-memory files are deleted before
   the base, no longer after. A console that noticed the missing base in between made new ones
