@@ -6,7 +6,7 @@
 //!
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
-//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0] [--shared-relays 0|1|2] [--republish]
+//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0] [--shared-relays 0|1|2] [--republish] [--qualify | --qualify-probe]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
@@ -32,7 +32,7 @@ use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
-     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0] [--shared-relays 0|1|2] [--republish] \
+     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0] [--shared-relays 0|1|2] [--republish] [--qualify | --qualify-probe] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
@@ -57,6 +57,9 @@ struct Args {
     republish: bool,
     /// A0: shared relays added to every cell.
     shared_relays: usize,
+    /// Qualify the relays of both lists and exit (A6); `true`: also write
+    /// test events.
+    qualify: Option<bool>,
     /// The relay strategy (`AS` by default).
     strategy: bitchat_console::strategies::Name,
     /// Relays of private messages; `None`: the apps' defaults.
@@ -99,6 +102,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         strategy: bitchat_console::strategies::Name::As,
         republish: false,
         shared_relays: 0,
+        qualify: None,
         dm_relays: None,
         presence: true,
         history: true,
@@ -160,6 +164,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             }
             "--no-presence" => a.presence = false,
             "--republish" => a.republish = true,
+            "--qualify" => a.qualify = Some(false),
+            "--qualify-probe" => a.qualify = Some(true),
             "--shared-relays" => {
                 a.shared_relays = match value()?.as_str() {
                     "0" => 0,
@@ -292,6 +298,29 @@ async fn main() {
         ),
         None => None,
     };
+    if let Some(probe) = args.qualify {
+        let mut lists = vec![&ios];
+        lists.extend(android.as_ref());
+        let relays = bitchat_console::qualify::relays_of(&lists);
+        eprintln!(
+            "qualifying {} relays through Tor{}",
+            relays.len(),
+            if probe {
+                ", writing one test event to each"
+            } else {
+                ""
+            }
+        );
+        let (prober, complete) = bitchat_console::qualify::run(relays, tor.clone(), probe).await;
+        let text = bitchat_console::qualify::report(&prober, probe, complete);
+        let path = args.data_dir.join("qualification.md");
+        if let Err(e) = std::fs::write(&path, &text) {
+            eprintln!("cannot write {}: {e}", path.display());
+        }
+        println!("{text}");
+        eprintln!("report: {}", path.display());
+        return;
+    }
     let inputs = bitchat_console::strategies::Inputs {
         ios,
         android,

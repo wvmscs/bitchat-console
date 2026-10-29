@@ -15,6 +15,10 @@
   relays, read from 5, a failed relay replaced by the next one (dead after three failed
   attempts, or refused for authentication; tried again after 10 min); `--shared-relays 0|1|2`.
   `ConsoleConfig::rebuild`.
+- `--qualify` and `--qualify-probe` (lot 4 of geohash-relays, A6): the relays of both lists
+  against the requirements, through Tor: NIP-11 declarations, and with `--qualify-probe` one
+  kind 20000 test event per relay in the probe cell (open sea, throwaway key), delivered live
+  and read back; report in `qualification.md` of the data directory. Module `qualify`.
 - `--republish` (A4 of geohash-relays, off by default): the console republishes, between the
   iOS and the Android relays of each followed cell, the events one set has and the other has
   not, once per event, at most 60 per minute; it follows the area. Module `republish`.
