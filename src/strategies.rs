@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use geohash_relays::a0::SharedStrategy;
 use geohash_relays::a1::{HrwStrategy, Salts};
+use geohash_relays::a5::Federation;
 use geohash_relays::{AppStrategy, Apps, RelayDirectory, RelayHealth, Strategy};
 
 use crate::console::Rebuild;
@@ -23,16 +24,19 @@ pub enum Name {
     A0,
     /// Salted rendezvous hashing on the iOS list (`--hrw-salt`).
     A1,
+    /// A federation of synchronised relays (`--federation`).
+    A5,
 }
 
 impl Name {
-    pub const ALL: &'static str = "AS, A0, A1";
+    pub const ALL: &'static str = "AS, A0, A1, A5";
 
     pub fn parse(s: &str) -> Option<Name> {
         match s.to_ascii_uppercase().as_str() {
             "AS" => Some(Name::As),
             "A0" => Some(Name::A0),
             "A1" => Some(Name::A1),
+            "A5" => Some(Name::A5),
             _ => None,
         }
     }
@@ -49,6 +53,8 @@ pub struct Inputs {
     pub salt: Option<Vec<u8>>,
     /// A2: the monitors' candidates, for A1 instead of the iOS list.
     pub monitored: Option<RelayDirectory>,
+    /// A5: the members of the federation.
+    pub federation: Vec<String>,
 }
 
 /// The strategy `name` on these lists, and how to rebuild it when relays
@@ -71,6 +77,7 @@ pub fn build(name: Name, inputs: &Inputs) -> (Arc<dyn Strategy>, Option<Rebuild>
             });
             (rebuild(&RelayHealth::new()), Some(rebuild))
         }
+        Name::A5 => (Arc::new(Federation::new(&inputs.federation)), None),
         Name::A1 => {
             let salts = match &inputs.salt {
                 Some(s) => Salts::Fixed(s.clone()),

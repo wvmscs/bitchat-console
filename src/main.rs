@@ -6,7 +6,7 @@
 //!
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
-//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--announce-relays] [--qualify | --qualify-probe]
+//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1|A5] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--announce-relays] [--federation <urls> [--federation-check]] [--qualify | --qualify-probe]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
@@ -32,7 +32,7 @@ use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
-     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--announce-relays] [--qualify | --qualify-probe] \
+     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1|A5] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--announce-relays] [--federation <urls> [--federation-check]] [--qualify | --qualify-probe] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
@@ -64,6 +64,9 @@ struct Args {
     /// A2: trusted NIP-66 monitors, and where to read them.
     monitors: std::collections::BTreeSet<String>,
     monitor_relays: Vec<String>,
+    /// A5: the members of the federation; check them and exit.
+    federation: Vec<String>,
+    federation_check: bool,
     /// Qualify the relays of both lists and exit (A6); `true`: also write
     /// test events.
     qualify: Option<bool>,
@@ -113,6 +116,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         salt: None,
         monitors: Default::default(),
         monitor_relays: Vec::new(),
+        federation: Vec::new(),
+        federation_check: false,
         qualify: None,
         dm_relays: None,
         presence: true,
@@ -191,6 +196,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                     return Err("--monitors: public keys, 64 hex digits, comma-separated".into());
                 }
             }
+            "--federation" => {
+                a.federation = value()?
+                    .split(',')
+                    .map(|r| r.trim().to_owned())
+                    .filter(|r| !r.is_empty())
+                    .collect();
+            }
+            "--federation-check" => a.federation_check = true,
             "--monitor-relays" => {
                 a.monitor_relays = value()?
                     .split(',')
@@ -338,6 +351,20 @@ async fn main() {
         ),
         None => None,
     };
+    if args.federation_check {
+        if args.federation.is_empty() {
+            fail("--federation-check", "give the members with --federation");
+        }
+        let cells = geohash_relays::geohash::with_neighbours(&args.geohash)
+            .unwrap_or_else(|e| fail("--federation-check", e));
+        let (omissions, failed) =
+            bitchat_console::federation::check(&args.federation, &cells, tor.clone()).await;
+        println!(
+            "{}",
+            bitchat_console::federation::report(&omissions, &failed)
+        );
+        return;
+    }
     if let Some(probe) = args.qualify {
         let mut lists = vec![&ios];
         lists.extend(android.as_ref());
@@ -410,7 +437,11 @@ async fn main() {
         shared: args.shared_relays,
         salt: args.salt.clone(),
         monitored,
+        federation: args.federation.clone(),
     };
+    if args.strategy == bitchat_console::strategies::Name::A5 && args.federation.is_empty() {
+        fail("--strategy A5", "give the members with --federation");
+    }
     if args.strategy == bitchat_console::strategies::Name::A1 && args.salt.is_none() {
         eprintln!("warning: A1 without --hrw-salt: the relay choice can be ground in advance");
     }
