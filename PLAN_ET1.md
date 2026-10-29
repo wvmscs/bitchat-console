@@ -24,6 +24,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 15 | Critère de départ (10 min) : messages grisés, DM cachés, effacement des DM | ✅ |
 | 16 | Onglet d'historique : recherche, tri, sélection, effacement ; modifications externes en direct | ✅ |
 | 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ✅ |
+| 18 | Derrière un proxy TLS (D34) : contrôle par requête, sonde au démarrage | ✅ |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
 8 dépend de 5 et 7 ; 9 dépend de 7 ; 10 dépend de 6 ; 11 dépend de 2 ; 12 clôt l'étape.
@@ -466,6 +467,21 @@ Demandé dans [EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) (28/10/2026).
 - [x] bitchat-web : `bitchat-history` dans les paquets (signé comme les autres) dès que le
       commit de la console l'a.
 
+### Lot 18 : derrière un proxy TLS ✅
+
+Demande de l'utilisateur (29/10/2026), comme le lot 22 de bitchat-geohash : un proxy TLS en
+amont suffit, son existence vérifiée (par requête et par une sonde au démarrage).
+
+- [x] `server::proxy` repris de bitchat-geohash (D25 là-bas) ; sonde par hyper et
+      tokio-rustls (racines web, plus `SSL_CERT_FILE` s'il est donné), sans nouvelle
+      dépendance, directe et non par Tor : vers le nom de la console, jamais vers un relais.
+- [x] `guard.rs`, `serve` : mêmes contrôles et refus que la carte ; proxy et TLS exclusifs ;
+      `--allow-remote` sans TLS admis derrière un proxy ; `Server::public_url`.
+- [x] Binaire : `--behind-proxy`, `--proxy-from`, `--no-proxy-check`, ligne `public:`.
+- [x] Tests : 4 unitaires, 1 de ligne de commande, 3 de serveur.
+- [x] `docs/behind-proxy.md` (Cloudflare Tunnel et Access, NGINX, Caddy), README.
+- [x] Essai réel : launcher derrière Caddy 2.11.7 (`https://localhost:8445`, certificat mkcert, `SSL_CERT_FILE` = autorité mkcert) : sonde passée, carte à `/` et console à `/console/` dans Chrome headless (aucune erreur), commandes avec l'origine publique, flux SSE de la console et de la carte, accès direct au port refusé ; essai avec le seul relais de l'utilisateur, sans présence, dossier de données jetable.
+
 ## Décisions
 
 Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et dans la spec.
@@ -490,6 +506,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D31 | Historique sur disque (remplace D11 et la règle « messages en mémoire seulement » de D16) | **Approuvée par l'utilisateur (28/10/2026)** : tous les messages (canal, DM, groupes, reçus et émis, masqués compris) dans `history.sqlite`, fichier à part de `console.sqlite` (pas de clés de groupe à côté), actif par défaut, `0600` ; traitements par un outil externe et une IA locale | ✅ |
 | D32 | Pseudo | **Choix de l'utilisateur (28/10/2026)** : un seul pseudo pour toutes les cellules, gardé par la console ; par cellule, possibilité de ne pas l'envoyer (l'app affiche alors `anon#xxxx`) | ✅ |
 | D33 | Sauvegarde et rotation | **Demande de l'utilisateur (28/10/2026)** : par cron, chaque jour, sauvegarde et compactage, puis rotation sur une base neuve qui commence 2 h avant ; suppression d'enregistrements et effacement complet possibles, base alors recréée. Rotation sans échange de fichier sous la console (proposition de l'agent, **validée le 28/10/2026**) : `VACUUM INTO` vers l'archive datée, suppression de ce qui a plus de 2 h, `VACUUM` | ✅ |
+| D34 | Derrière un proxy TLS (lot 18) | Comme D25 de bitchat-geohash : `--behind-proxy https://<nom>` remplace l'exigence de TLS hors de la boucle locale ; adresses du proxy (`--proxy-from`), HTTPS en amont, nom public ; sonde au démarrage avec jeton, refus de démarrer sinon (`--no-proxy-check`). La console n'a pas d'authentification : elle se met dans le proxy (documenté) — *demande et choix de l'utilisateur, détails par l'agent, à valider* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -546,3 +563,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | 16 | Lot 16 : onglet d'historique (filtres, tri, sélection, effacement, en direct), changements faits ailleurs repris dans le fil (trigger, `data_version`), API CRUD HTTP de l'historique. Module `history` restructuré autour de `HistoryFile` (partagé avec l'outil du lot 17). Défaut trouvé dans Chrome : la recherche « NUMÉRO » ne trouvait pas « numéro » (`LIKE` ne replie que l'ASCII) → fonction `contains_folded`. 74 tests Rust, 15 `node` ; clippy propre avec et sans `arti` ; Chrome headless sur le binaire réel : lien, filtres, recherche, effacement, effacés, modification externe visible en direct. |
 | 28/10/2026 | 17 | Lot 17 : outil `bitchat-history` (requêtes, édition, effacement, sauvegarde, rotation D33, effacement complet, ligne cron), `SKILL.md`, README. Essai réel : rotation pendant que la console tourne, écriture juste après, aucune erreur. Deux défauts trouvés et corrigés (noms de copie à la seconde près, `since` qui reculait). 76 tests Rust, 15 `node` ; clippy propre avec et sans `arti`. |
 | 29/10/2026 | — | Tag `v0.1.0` posé (version 0.1.0), à la demande de l'utilisateur. |
+| 29/10/2026 | 18 | Derrière un proxy TLS (D34, demande de l'utilisateur), sans nouvelle version. launcher derrière Caddy 2.11.7 (`https://localhost:8445`, certificat mkcert, `SSL_CERT_FILE` = autorité mkcert) : sonde passée, carte à `/` et console à `/console/` dans Chrome headless (aucune erreur), commandes avec l'origine publique, flux SSE de la console et de la carte, accès direct au port refusé ; essai avec le seul relais de l'utilisateur, sans présence, dossier de données jetable. |

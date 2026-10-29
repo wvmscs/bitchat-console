@@ -3,12 +3,13 @@
 
 //! The page of the console (lot 7): served locally, live updates by SSE,
 //! commands by `POST`, protected like bitchat-geohash's map (Host, Origin,
-//! CSP), HTTPS optional.
+//! CSP), HTTPS optional, or behind a TLS proxy (D34).
 
 mod api;
 mod assets;
 mod guard;
 mod map;
+mod proxy;
 mod tls;
 
 use std::net::SocketAddr;
@@ -23,6 +24,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 pub use assets::Asset;
+pub use proxy::{Net, ProxyConfig};
 pub use tls::TlsFiles;
 
 use crate::console::Console;
@@ -31,9 +33,12 @@ use crate::error::{Error, Result};
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub listen: SocketAddr,
-    /// Listening on a non-loopback address needs it, and TLS.
+    /// Listening on a non-loopback address needs it, and TLS here or in a
+    /// proxy.
     pub allow_remote: bool,
     pub tls: Option<TlsFiles>,
+    /// Behind a TLS proxy (D34): clear HTTP from the proxy only; no `tls`.
+    pub proxy: Option<ProxyConfig>,
     pub max_body: usize,
     /// A running bitchat-geohash map (`http://127.0.0.1:8080`): served at
     /// `/`, with the console floating over it; the console is always at
@@ -47,6 +52,7 @@ impl Default for ServerConfig {
             listen: SocketAddr::from(([127, 0, 0, 1], 8090)),
             allow_remote: false,
             tls: None,
+            proxy: None,
             max_body: 64 * 1024,
             map: None,
         }
@@ -57,6 +63,7 @@ impl Default for ServerConfig {
 pub struct Server {
     addr: SocketAddr,
     https: bool,
+    public: Option<String>,
     stop: watch::Sender<bool>,
     task: JoinHandle<std::io::Result<()>>,
 }
@@ -73,6 +80,12 @@ impl Server {
             if self.https { "https" } else { "http" },
             self.addr
         )
+    }
+
+    /// Behind a proxy, the public origin (`https://name`); the browser
+    /// goes there, not to [`Server::url`].
+    pub fn public_url(&self) -> Option<&str> {
+        self.public.as_deref()
     }
 
     /// Closes the streams and the listener.
@@ -134,19 +147,44 @@ fn console_routes(prefix: &str) -> Router<api::AppState> {
         .route(&p("/api/group"), post(api::group))
 }
 
-/// Serves the page around a running console.
+/// Serves the page around a running console. Behind a proxy (D34), the
+/// public name must lead here, unless `ProxyConfig::check` is off.
 pub async fn serve(console: Arc<Console>, config: ServerConfig) -> Result<Server> {
+    if config.proxy.is_some() && config.tls.is_some() {
+        return Err(Error::Proxy(
+            "TLS is the proxy's: no certificate here".into(),
+        ));
+    }
     if !config.listen.ip().is_loopback() {
         if !config.allow_remote {
             return Err(Error::RemoteListen(config.listen.to_string()));
         }
-        if config.tls.is_none() {
+        if config.tls.is_none() && config.proxy.is_none() {
             return Err(Error::Tls(format!(
-                "listening on {} needs TLS (--tls-cert, --tls-key): the page shows private messages",
+                "listening on {} needs TLS (--tls-cert, --tls-key) or a TLS proxy in front \
+                 (--behind-proxy): the page shows private messages",
                 config.listen
             )));
         }
     }
+    let behind = config
+        .proxy
+        .as_ref()
+        .map(|p| {
+            Ok::<_, Error>(guard::Behind {
+                public: proxy::Public::parse(&p.public)?,
+                from: p.from.clone(),
+                token: proxy::token(),
+            })
+        })
+        .transpose()?;
+    let probe = config
+        .proxy
+        .as_ref()
+        .filter(|p| p.check)
+        .zip(behind.as_ref())
+        .map(|(_, b)| (b.public.origin.clone(), b.token.clone()));
+    let public = behind.as_ref().map(|b| b.public.origin.clone());
     let tls = config.tls.as_ref().map(tls::load).transpose()?;
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
     let addr = listener.local_addr()?;
@@ -158,6 +196,7 @@ pub async fn serve(console: Arc<Console>, config: ServerConfig) -> Result<Server
     let guard = Arc::new(guard::Guard::new(
         addr,
         tls.as_ref().map(|t| t.leaf.clone()),
+        behind,
     ));
     let mut app = console_routes("/console").route(
         "/console",
@@ -180,19 +219,32 @@ pub async fn serve(console: Arc<Console>, config: ServerConfig) -> Result<Server
         None => {
             let mut stop = stop_rx;
             tokio::spawn(async move {
-                axum::serve(listener, app)
-                    .with_graceful_shutdown(async move {
-                        let _ = stop.wait_for(|s| *s).await;
-                    })
-                    .await
+                // The peer address: behind a proxy, only the proxy's (D34).
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .with_graceful_shutdown(async move {
+                    let _ = stop.wait_for(|s| *s).await;
+                })
+                .await
             })
         }
     };
     tracing::info!(url = %format!("{}://{addr}/", if https { "https" } else { "http" }), "console page served");
-    Ok(Server {
+    let server = Server {
         addr,
         https,
+        public,
         stop,
         task,
-    })
+    };
+    if let Some((origin, token)) = probe {
+        if let Err(e) = proxy::probe(&origin, &token).await {
+            server.shutdown().await;
+            return Err(e);
+        }
+        tracing::info!("console behind the proxy on {origin}/ (checked)");
+    }
+    Ok(server)
 }

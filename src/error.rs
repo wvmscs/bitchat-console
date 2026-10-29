@@ -57,6 +57,8 @@ pub enum Error {
     NoRow(i64),
     #[error("TLS: {0}")]
     Tls(String),
+    #[error("behind a proxy: {0}")]
+    Proxy(String),
     /// A non-loopback address without `--allow-remote`.
     #[error("listening on {0} (not a loopback address) needs --allow-remote")]
     RemoteListen(String),

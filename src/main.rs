@@ -9,7 +9,9 @@
 //!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1|A5] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--announce-relays] [--federation <urls> [--federation-check]] [--qualify | --qualify-probe]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
-//!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
+//!       [--tls-cert <pem> --tls-key <pem> | --behind-proxy https://name
+//!        [--proxy-from 127.0.0.1/8,::1] [--no-proxy-check]]
+//!       [--map http://127.0.0.1:8080] [--open] [--verbose]
 //!
 //! Every message is kept in `<data-dir>/history.sqlite` (D31), unless
 //! `--no-history`.
@@ -27,7 +29,7 @@ use bitchat_console::connector::{Connector, Socks5};
 use bitchat_console::console::{Console, ConsoleConfig};
 use bitchat_console::identity::Keys;
 use bitchat_console::lists::{ListSource, load};
-use bitchat_console::server::{ServerConfig, TlsFiles, serve};
+use bitchat_console::server::{Net, ProxyConfig, ServerConfig, TlsFiles, serve};
 use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
@@ -35,7 +37,9 @@ const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <
      [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1|A5] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--announce-relays] [--federation <urls> [--federation-check]] [--qualify | --qualify-probe] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
-     [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
+     [--tls-cert <pem> --tls-key <pem> | --behind-proxy https://<name> \
+     [--proxy-from <addr|net>,...] [--no-proxy-check]] \
+     [--map http://127.0.0.1:8080] [--open] [--verbose]";
 
 /// Which Tor (D1, D24).
 #[derive(Debug, Clone, PartialEq)]
@@ -128,6 +132,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         verbose: false,
     };
     let (mut cert, mut key) = (None::<PathBuf>, None::<PathBuf>);
+    let (mut public, mut from, mut no_check) = (None::<String>, None::<Vec<Net>>, false);
     while let Some(arg) = it.next() {
         let mut value = || it.next().ok_or_else(|| format!("{arg} needs a value"));
         match arg.as_str() {
@@ -246,6 +251,16 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--map" => a.server.map = Some(value()?),
             "--tls-cert" => cert = Some(value()?.into()),
             "--tls-key" => key = Some(value()?.into()),
+            "--behind-proxy" => public = Some(value()?),
+            "--proxy-from" => {
+                let list = value()?;
+                let nets = list
+                    .split(',')
+                    .map(|n| Net::parse(n.trim()).map_err(|e| format!("--proxy-from: {e}")))
+                    .collect::<Result<Vec<_>, _>>()?;
+                from.get_or_insert_with(Vec::new).extend(nets);
+            }
+            "--no-proxy-check" => no_check = true,
             "--open" => a.open = true,
             "--verbose" => a.verbose = true,
             s if s.starts_with('-') => return Err(format!("unknown option {s}")),
@@ -260,6 +275,25 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         (Some(cert), Some(key)) => Some(TlsFiles { cert, key }),
         (None, None) => None,
         _ => return Err("--tls-cert and --tls-key go together".into()),
+    };
+    a.server.proxy = match public {
+        Some(public) => {
+            if a.server.tls.is_some() {
+                return Err(
+                    "--behind-proxy: the proxy does the TLS (no --tls-cert nor --tls-key)".into(),
+                );
+            }
+            let mut p = ProxyConfig::new(&public).map_err(|e| format!("--behind-proxy: {e}"))?;
+            if let Some(from) = from {
+                p.from = from;
+            }
+            p.check = !no_check;
+            Some(p)
+        }
+        None if from.is_some() || no_check => {
+            return Err("--proxy-from and --no-proxy-check go with --behind-proxy".into());
+        }
+        None => None,
     };
     Ok(a)
 }
@@ -493,6 +527,15 @@ async fn main() {
         .unwrap_or_else(|e| fail("cannot serve the page", e));
     let url = format!("{}/", server.url());
     eprintln!("console: {url}");
+    // Behind a proxy the browser uses the public name: the local URL is
+    // refused there (wrong host, not from the proxy).
+    let url = match server.public_url() {
+        Some(public) => {
+            eprintln!("public: {public}/");
+            format!("{public}/")
+        }
+        None => url,
+    };
     if args.open {
         open_browser(&url);
     }
@@ -555,5 +598,31 @@ mod tests {
         assert!(err("u09tv --tls-cert c.pem").contains("go together"));
         assert!(err("u09tv --pow-bits 99").contains("0 to 32"));
         assert!(err("u09tv --tor-socks localhost").contains("address:port"));
+    }
+
+    #[test]
+    fn behind_a_proxy() {
+        let a = parse("u09tv --behind-proxy https://Console.Example.org").unwrap();
+        let p = a.server.proxy.unwrap();
+        assert_eq!(p.public, "https://console.example.org");
+        assert_eq!(p.from, ProxyConfig::new("https://x").unwrap().from);
+        assert!(p.check);
+        let a = parse(
+            "u09tv --behind-proxy https://c.example.org:8443 --listen 0.0.0.0:8090 \
+             --allow-remote --proxy-from 172.17.0.0/16 --no-proxy-check",
+        )
+        .unwrap();
+        let p = a.server.proxy.unwrap();
+        assert_eq!(p.public, "https://c.example.org:8443");
+        assert!(p.from[0].contains("172.17.0.5".parse().unwrap()));
+        assert!(!p.check);
+        let err = |s: &str| parse(s).err().unwrap();
+        assert!(err("u09tv --behind-proxy http://c.example.org").contains("HTTPS"));
+        assert!(
+            err("u09tv --behind-proxy https://c --tls-cert c --tls-key k")
+                .contains("the proxy does the TLS")
+        );
+        assert!(err("u09tv --behind-proxy https://c --proxy-from x").contains("--proxy-from"));
+        assert!(err("u09tv --no-proxy-check").contains("go with --behind-proxy"));
     }
 }

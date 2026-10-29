@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use bitchat_console::connector::Loopback;
 use bitchat_console::console::{Console, KIND_MESSAGE};
-use bitchat_console::server::{Asset, ServerConfig, serve};
+use bitchat_console::server::{Asset, Net, ProxyConfig, ServerConfig, TlsFiles, serve};
 use common::*;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -58,6 +58,18 @@ impl Running {
 
     /// With a history (D31) in `history`.
     async fn start_keeping(history: Option<std::path::PathBuf>) -> Running {
+        Self::start_with(history, None).await
+    }
+
+    /// Behind a proxy (D34).
+    async fn start_behind(proxy: ProxyConfig) -> Running {
+        Self::start_with(None, Some(proxy)).await
+    }
+
+    async fn start_with(
+        history: Option<std::path::PathBuf>,
+        proxy: Option<ProxyConfig>,
+    ) -> Running {
         let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
         let mut c = config(&[relay.url()], Arc::new(Loopback));
         c.history_path = history;
@@ -68,6 +80,7 @@ impl Running {
             console.clone(),
             ServerConfig {
                 listen: "127.0.0.1:0".parse().unwrap(),
+                proxy,
                 ..ServerConfig::default()
             },
         )
@@ -377,4 +390,138 @@ async fn history_api() {
     for ext in ["", "-wal", "-shm"] {
         let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
     }
+}
+
+// --- Behind a TLS proxy (D34) ---
+
+const PUBLIC: &str = "https://console.example.org";
+
+fn behind() -> ProxyConfig {
+    ProxyConfig {
+        check: false,
+        ..ProxyConfig::new(PUBLIC).unwrap()
+    }
+}
+
+#[tokio::test]
+async fn behind_a_proxy_only_what_comes_through_it_in_https() {
+    let r = Running::start_behind(behind()).await;
+    let public = ("Host", "console.example.org".to_owned());
+    let https = ("X-Forwarded-Proto", "https".to_owned());
+    let get = |headers: Vec<(&'static str, String)>| async move {
+        http(r.addr, "GET", "/api/state", &headers, "").await
+    };
+    // Straight to the port: refused.
+    let (status, body) = get(vec![r.host()]).await;
+    assert_eq!(status, 403);
+    assert!(body.contains("not_https_upstream"), "{body}");
+    // Through the proxy, in HTTPS, for the public name.
+    assert_eq!(get(vec![public.clone(), https.clone()]).await.0, 200);
+    let cf = ("CF-Visitor", r#"{"scheme":"https"}"#.to_owned());
+    assert_eq!(get(vec![public.clone(), cf]).await.0, 200);
+    // In clear HTTP before the proxy, or for another name.
+    let clear = ("X-Forwarded-Proto", "http".to_owned());
+    assert_eq!(get(vec![public.clone(), clear]).await.0, 403);
+    assert_eq!(get(vec![r.host(), https.clone()]).await.0, 421);
+    let other = ("X-Forwarded-Host", "evil.example".to_owned());
+    assert_eq!(get(vec![public.clone(), https.clone(), other]).await.0, 421);
+    // The probe's path answers a token.
+    let (status, token) = http(
+        r.addr,
+        "GET",
+        "/.well-known/bitchat-proxy-check",
+        &[public.clone(), https.clone()],
+        "",
+    )
+    .await;
+    assert_eq!((status, token.len()), (200, 32));
+    // Commands carry the public origin.
+    let command = |origin: String| {
+        let headers = vec![
+            public.clone(),
+            https.clone(),
+            ("Origin", origin),
+            ("Content-Type", "application/json".to_owned()),
+        ];
+        async move {
+            http(
+                r.addr,
+                "POST",
+                "/api/area",
+                &headers,
+                r#"{"geohash":"u09"}"#,
+            )
+            .await
+        }
+    };
+    assert_eq!(command(format!("http://{}", r.addr)).await.0, 403);
+    let (status, body) = command(PUBLIC.to_owned()).await;
+    assert_eq!(status, 400, "past the guard: {body}");
+    assert!(body.contains("not_a_channel"));
+}
+
+#[tokio::test]
+async fn behind_a_proxy_other_addresses_are_refused() {
+    let r = Running::start_behind(ProxyConfig {
+        from: vec![Net::parse("10.0.0.0/8").unwrap()],
+        ..behind()
+    })
+    .await;
+    let headers = [
+        ("Host", "console.example.org".to_owned()),
+        ("X-Forwarded-Proto", "https".to_owned()),
+    ];
+    let (status, body) = http(r.addr, "GET", "/api/state", &headers, "").await;
+    assert_eq!(status, 403);
+    assert!(body.contains("not_from_proxy"), "{body}");
+}
+
+#[tokio::test]
+async fn behind_a_proxy_the_start_checks() {
+    let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
+    let console = Arc::new(Console::start(config(&[relay.url()], Arc::new(Loopback))));
+    // No proxy at the public name: the probe fails, nothing is served.
+    let probed = serve(
+        console.clone(),
+        ServerConfig {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            proxy: Some(ProxyConfig::new("https://127.0.0.1:9").unwrap()),
+            ..ServerConfig::default()
+        },
+    )
+    .await;
+    match probed {
+        Err(bitchat_console::Error::Proxy(why)) => {
+            assert!(why.contains("--no-proxy-check"), "{why}")
+        }
+        other => panic!("probe passed: {:?}", other.err()),
+    }
+    // TLS is the proxy's.
+    let both = serve(
+        console.clone(),
+        ServerConfig {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            proxy: Some(behind()),
+            tls: Some(TlsFiles {
+                cert: "c.pem".into(),
+                key: "k.pem".into(),
+            }),
+            ..ServerConfig::default()
+        },
+    )
+    .await;
+    assert!(matches!(both, Err(bitchat_console::Error::Proxy(_))));
+    // A proxy on another machine: a remote address without TLS here.
+    let remote = serve(
+        console.clone(),
+        ServerConfig {
+            listen: "0.0.0.0:0".parse().unwrap(),
+            allow_remote: true,
+            proxy: Some(behind()),
+            ..ServerConfig::default()
+        },
+    )
+    .await
+    .unwrap();
+    remote.shutdown().await;
 }

@@ -37,6 +37,12 @@ bitchat-geohash u09t --listen 127.0.0.1:8080 &
 cargo run --release --features arti -- u09tv --map http://127.0.0.1:8080 --open
 ```
 
+To serve the page on a public name, a TLS proxy in front (Cloudflare Tunnel, NGINX, Caddy)
+is enough: `--behind-proxy https://bitchat.example.org`. The console then accepts only what
+comes through the proxy in HTTPS, and checks at start that the name leads to it. Put a login
+in the proxy: the console has none. Configurations in
+[docs/behind-proxy.md](docs/behind-proxy.md).
+
 Run the binary with a wrong option to list them all (`--teleport`, `--tor-socks`, `--apps`, `--strategy AS|A0|A1|A5`, `--federation`, `--federation-check`, `--shared-relays`, `--hrw-salt`, `--monitors`, `--monitor-relays`, `--republish`, `--announce-relays`, `--qualify`, `--qualify-probe`,
 `--dm-relays`, `--no-presence`, `--pow-bits`, `--listen`, TLS…).
 

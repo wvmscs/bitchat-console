@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+- Behind a TLS proxy (lot 18, D34): `--behind-proxy https://<name>` (`ServerConfig::proxy`)
+  serves clear HTTP to a proxy that does the TLS (Cloudflare Tunnel, NGINX, Caddy), instead of
+  requiring a certificate off the loopback. Requests only from `--proxy-from` (default the
+  loopback), in HTTPS upstream, for the public name; a start probe must get this start's token
+  back from `https://<name>/.well-known/bitchat-proxy-check` (`--no-proxy-check`). A `public:`
+  line on stderr. Configurations in `docs/behind-proxy.md`.
+
 ### Changed
 - The communication (`connector`, `relay`, `nostr`, `lists`, `arti`) moved to the crate
   `geohash-relays-net` (feature `console`), GPL-3.0-or-later, re-exported under the same
