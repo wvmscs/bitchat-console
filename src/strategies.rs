@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use geohash_relays::a0::SharedStrategy;
+use geohash_relays::a1::{HrwStrategy, Salts};
 use geohash_relays::{AppStrategy, Apps, RelayDirectory, RelayHealth, Strategy};
 
 use crate::console::Rebuild;
@@ -20,15 +21,18 @@ pub enum Name {
     /// One list (the iOS one) and the iOS rule, write 8, read 5, failed
     /// relays replaced, `shared` shared relays.
     A0,
+    /// Salted rendezvous hashing on the iOS list (`--hrw-salt`).
+    A1,
 }
 
 impl Name {
-    pub const ALL: &'static str = "AS, A0";
+    pub const ALL: &'static str = "AS, A0, A1";
 
     pub fn parse(s: &str) -> Option<Name> {
         match s.to_ascii_uppercase().as_str() {
             "AS" => Some(Name::As),
             "A0" => Some(Name::A0),
+            "A1" => Some(Name::A1),
             _ => None,
         }
     }
@@ -41,6 +45,8 @@ pub struct Inputs {
     pub apps: Apps,
     /// A0: shared relays added to every cell (0 to 2).
     pub shared: usize,
+    /// A1: the salt (`None`: unsalted, which an attacker can grind).
+    pub salt: Option<Vec<u8>>,
 }
 
 /// The strategy `name` on these lists, and how to rebuild it when relays
@@ -62,6 +68,16 @@ pub fn build(name: Name, inputs: &Inputs) -> (Arc<dyn Strategy>, Option<Rebuild>
                 Arc::new(base.clone().with_health(health.clone())) as Arc<dyn Strategy>
             });
             (rebuild(&RelayHealth::new()), Some(rebuild))
+        }
+        Name::A1 => {
+            let salts = match &inputs.salt {
+                Some(s) => Salts::Fixed(s.clone()),
+                None => Salts::None,
+            };
+            (
+                Arc::new(HrwStrategy::new(&inputs.ios).with_salts(salts, crate::nostr::unix_now())),
+                None,
+            )
         }
     }
 }

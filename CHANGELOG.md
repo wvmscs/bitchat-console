@@ -15,6 +15,8 @@
   relays, read from 5, a failed relay replaced by the next one (dead after three failed
   attempts, or refused for authentication; tried again after 10 min); `--shared-relays 0|1|2`.
   `ConsoleConfig::rebuild`.
+- `--strategy A1 --hrw-salt <hex>` (lot 5 of geohash-relays): salted rendezvous hashing on the
+  iOS list; a warning without salt (the choice can be ground in advance).
 - `--qualify` and `--qualify-probe` (lot 4 of geohash-relays, A6): the relays of both lists
   against the requirements, through Tor: NIP-11 declarations, and with `--qualify-probe` one
   kind 20000 test event per relay in the probe cell (open sea, throwaway key), delivered live

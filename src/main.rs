@@ -6,7 +6,7 @@
 //!
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
-//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0] [--shared-relays 0|1|2] [--republish] [--qualify | --qualify-probe]
+//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--republish] [--qualify | --qualify-probe]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
@@ -32,7 +32,7 @@ use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
-     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0] [--shared-relays 0|1|2] [--republish] [--qualify | --qualify-probe] \
+     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--republish] [--qualify | --qualify-probe] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
@@ -57,6 +57,8 @@ struct Args {
     republish: bool,
     /// A0: shared relays added to every cell.
     shared_relays: usize,
+    /// A1: the salt of the rendezvous hashing.
+    salt: Option<Vec<u8>>,
     /// Qualify the relays of both lists and exit (A6); `true`: also write
     /// test events.
     qualify: Option<bool>,
@@ -102,6 +104,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         strategy: bitchat_console::strategies::Name::As,
         republish: false,
         shared_relays: 0,
+        salt: None,
         qualify: None,
         dm_relays: None,
         presence: true,
@@ -166,6 +169,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--republish" => a.republish = true,
             "--qualify" => a.qualify = Some(false),
             "--qualify-probe" => a.qualify = Some(true),
+            "--hrw-salt" => {
+                let v = value()?;
+                a.salt = Some(
+                    bitchat_console::nostr::hex_decode(&v)
+                        .filter(|b| !b.is_empty())
+                        .ok_or_else(|| format!("--hrw-salt: hexadecimal bytes, got {v:?}"))?,
+                );
+            }
             "--shared-relays" => {
                 a.shared_relays = match value()?.as_str() {
                     "0" => 0,
@@ -326,7 +337,11 @@ async fn main() {
         android,
         apps: args.apps,
         shared: args.shared_relays,
+        salt: args.salt.clone(),
     };
+    if args.strategy == bitchat_console::strategies::Name::A1 && args.salt.is_none() {
+        eprintln!("warning: A1 without --hrw-salt: the relay choice can be ground in advance");
+    }
     let (strategy, rebuild) = bitchat_console::strategies::build(args.strategy, &inputs);
     let connector = tor.clone();
     let mut config = ConsoleConfig::new(strategy, tor, Arc::new(keys.seed));
@@ -410,6 +425,21 @@ mod tests {
         assert_eq!((a.apps, a.pow_bits), (Apps::Ios, 12));
         assert_eq!(a.server.listen, "127.0.0.1:9000".parse().unwrap());
         assert_eq!(a.dm_relays, Some(vec!["wss://a".into(), "wss://b".into()]));
+    }
+
+    #[test]
+    fn strategy_options() {
+        use bitchat_console::strategies::Name;
+        let a = parse("u09tv --strategy a1 --hrw-salt 6b2f --republish --shared-relays 2").unwrap();
+        assert_eq!(a.strategy, Name::A1);
+        assert_eq!(a.salt, Some(vec![0x6b, 0x2f]));
+        assert!(a.republish);
+        assert_eq!(a.shared_relays, 2);
+        assert_eq!(parse("u09tv --qualify").unwrap().qualify, Some(false));
+        assert_eq!(parse("u09tv --qualify-probe").unwrap().qualify, Some(true));
+        assert!(parse("u09tv --strategy A9").is_err());
+        assert!(parse("u09tv --hrw-salt zz").is_err());
+        assert!(parse("u09tv --shared-relays 3").is_err());
     }
 
     #[test]

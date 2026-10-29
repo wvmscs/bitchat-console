@@ -1532,7 +1532,7 @@ dependencies = [
 [[package]]
 name = "geohash-relays"
 version = "0.1.0"
-source = "git+https://github.com/wvmscs/geohash-relays.git?branch=strategies#6cb50bd7bb9156088e0434a482d4669ab48241d9"
+source = "git+https://github.com/wvmscs/geohash-relays.git?branch=strategies#931646d433e2fdd8a715c5e17bb2418db2f70163"
 dependencies = [
  "serde_json",
  "sha2",
@@ -2895,7 +2895,7 @@ dependencies = [
  "derive-deftly",
  "libc",
  "paste",
- "thiserror 2.0.21",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
