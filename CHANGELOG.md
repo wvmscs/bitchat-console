@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-29
+
 ### Added
 - Behind a TLS proxy (lot 18, D34): `--behind-proxy https://<name>` (`ServerConfig::proxy`)
   serves clear HTTP to a proxy that does the TLS (Cloudflare Tunnel, NGINX, Caddy), instead of
