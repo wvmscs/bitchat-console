@@ -47,6 +47,8 @@ pub struct Inputs {
     pub shared: usize,
     /// A1: the salt (`None`: unsalted, which an attacker can grind).
     pub salt: Option<Vec<u8>>,
+    /// A2: the monitors' candidates, for A1 instead of the iOS list.
+    pub monitored: Option<RelayDirectory>,
 }
 
 /// The strategy `name` on these lists, and how to rebuild it when relays
@@ -75,7 +77,10 @@ pub fn build(name: Name, inputs: &Inputs) -> (Arc<dyn Strategy>, Option<Rebuild>
                 None => Salts::None,
             };
             (
-                Arc::new(HrwStrategy::new(&inputs.ios).with_salts(salts, crate::nostr::unix_now())),
+                Arc::new(
+                    HrwStrategy::new(inputs.monitored.as_ref().unwrap_or(&inputs.ios))
+                        .with_salts(salts, crate::nostr::unix_now()),
+                ),
                 None,
             )
         }

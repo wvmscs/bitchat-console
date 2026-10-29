@@ -14,6 +14,7 @@ mod error;
 pub mod groups;
 pub mod history;
 pub mod identity;
+pub mod monitors;
 pub mod packet;
 pub mod pow;
 pub mod qualify;

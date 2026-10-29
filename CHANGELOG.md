@@ -17,6 +17,10 @@
   `ConsoleConfig::rebuild`.
 - `--strategy A1 --hrw-salt <hex>` (lot 5 of geohash-relays): salted rendezvous hashing on the
   iOS list; a warning without salt (the choice can be ground in advance).
+- `--monitors <keys> --monitor-relays <urls>` (lot 6 of geohash-relays, A2): the directory of
+  trusted NIP-66 monitors, read through Tor at start: its candidates feed A1, its shared
+  verdicts filter the lists (unless they would remove more than half); kept in `monitors.csv`
+  and used when the monitors cannot be read. Module `monitors`.
 - `--qualify` and `--qualify-probe` (lot 4 of geohash-relays, A6): the relays of both lists
   against the requirements, through Tor: NIP-11 declarations, and with `--qualify-probe` one
   kind 20000 test event per relay in the probe cell (open sea, throwaway key), delivered live

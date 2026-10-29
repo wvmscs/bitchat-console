@@ -6,7 +6,7 @@
 //!
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
-//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--republish] [--qualify | --qualify-probe]
+//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--qualify | --qualify-probe]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
@@ -32,7 +32,7 @@ use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
-     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--republish] [--qualify | --qualify-probe] \
+     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0|A1] [--shared-relays 0|1|2] [--hrw-salt <hex>] [--monitors <keys> --monitor-relays <urls>] [--republish] [--qualify | --qualify-probe] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
@@ -59,6 +59,9 @@ struct Args {
     shared_relays: usize,
     /// A1: the salt of the rendezvous hashing.
     salt: Option<Vec<u8>>,
+    /// A2: trusted NIP-66 monitors, and where to read them.
+    monitors: std::collections::BTreeSet<String>,
+    monitor_relays: Vec<String>,
     /// Qualify the relays of both lists and exit (A6); `true`: also write
     /// test events.
     qualify: Option<bool>,
@@ -105,6 +108,8 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         republish: false,
         shared_relays: 0,
         salt: None,
+        monitors: Default::default(),
+        monitor_relays: Vec::new(),
         qualify: None,
         dm_relays: None,
         presence: true,
@@ -169,6 +174,26 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--republish" => a.republish = true,
             "--qualify" => a.qualify = Some(false),
             "--qualify-probe" => a.qualify = Some(true),
+            "--monitors" => {
+                a.monitors = value()?
+                    .split(',')
+                    .map(|k| k.trim().to_lowercase())
+                    .filter(|k| !k.is_empty())
+                    .collect();
+                if a.monitors
+                    .iter()
+                    .any(|k| k.len() != 64 || bitchat_console::nostr::hex_decode(k).is_none())
+                {
+                    return Err("--monitors: public keys, 64 hex digits, comma-separated".into());
+                }
+            }
+            "--monitor-relays" => {
+                a.monitor_relays = value()?
+                    .split(',')
+                    .map(|r| r.trim().to_owned())
+                    .filter(|r| !r.is_empty())
+                    .collect();
+            }
             "--hrw-salt" => {
                 let v = value()?;
                 a.salt = Some(
@@ -332,12 +357,55 @@ async fn main() {
         eprintln!("report: {}", path.display());
         return;
     }
+    // A2: the trusted monitors' directory, if asked.
+    let (mut ios, mut android) = (ios, android);
+    let mut monitored = None;
+    if !args.monitors.is_empty() {
+        if args.monitor_relays.is_empty() {
+            fail(
+                "--monitors",
+                "give the relays to read them from with --monitor-relays",
+            );
+        }
+        match bitchat_console::monitors::load(
+            args.monitors.clone(),
+            args.monitor_relays.clone(),
+            tor.clone(),
+            &args.data_dir,
+        )
+        .await
+        {
+            Some((dir, list)) => {
+                eprintln!("monitors: {} candidate relays", list.len());
+                if !dir.qualification.verdicts.is_empty() {
+                    let guard = |l: geohash_relays::RelayDirectory, name: &str| match dir
+                        .guard(l.clone())
+                    {
+                        Ok((kept, true)) => kept,
+                        _ => {
+                            eprintln!(
+                                "monitors would remove most of the {name} list: not used for it"
+                            );
+                            l
+                        }
+                    };
+                    ios = guard(ios, "iOS");
+                    android = android.map(|a| guard(a, "Android"));
+                }
+                monitored = Some(list);
+            }
+            None => eprintln!(
+                "monitors: nothing read, no cached directory: the lists are used as they are"
+            ),
+        }
+    }
     let inputs = bitchat_console::strategies::Inputs {
         ios,
         android,
         apps: args.apps,
         shared: args.shared_relays,
         salt: args.salt.clone(),
+        monitored,
     };
     if args.strategy == bitchat_console::strategies::Name::A1 && args.salt.is_none() {
         eprintln!("warning: A1 without --hrw-salt: the relay choice can be ground in advance");
