@@ -20,6 +20,18 @@ neighbours, write there, talk in private and in groups, from the browser, throug
   map shows with the console floating over it; a cell of the map can be followed in one click,
   and the cells chosen in the console are outlined on the map, which fits them.
 
+## Install
+
+bitchat-console is installed with the other BitChat tools (bitchat-geohash, and bitchat-launcher
+that starts both): the binaries for macOS, Linux and Docker, how to check them, and the
+development environment are in
+[bitchat-launcher's README](https://github.com/wvmscs/bitchat-launcher#install).
+From the sources alone:
+
+```sh
+cargo install --git https://github.com/wvmscs/bitchat-console --features arti
+```
+
 ## Run
 
 Tor comes from the binary (`--features arti`) or from a Tor daemon (`brew install tor`, then
