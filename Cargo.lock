@@ -1532,7 +1532,7 @@ dependencies = [
 [[package]]
 name = "geohash-relays"
 version = "0.1.0"
-source = "git+https://github.com/wvmscs/geohash-relays.git?branch=strategies#bc6b1f93b34573a168f6edacc1686c33b3dedc47"
+source = "git+https://github.com/wvmscs/geohash-relays.git?branch=strategies#9dbb661b32054107460018ec962fb25eb293b86e"
 dependencies = [
  "serde_json",
  "sha2",
@@ -1542,7 +1542,7 @@ dependencies = [
 [[package]]
 name = "geohash-relays-net"
 version = "0.1.0"
-source = "git+https://github.com/wvmscs/geohash-relays-net.git?branch=main#baa61c2d6d10a4821f94093f74c1c7e6d0b1871b"
+source = "git+https://github.com/wvmscs/geohash-relays-net.git?branch=main#d2795ef174c8c9061fd1cd1e2f600a7ae684ee1c"
 dependencies = [
  "arti-client",
  "futures-util",
@@ -2895,7 +2895,7 @@ dependencies = [
  "derive-deftly",
  "libc",
  "paste",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

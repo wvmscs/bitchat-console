@@ -25,7 +25,7 @@ use crate::connector::Connector;
 use crate::nostr::{Event, unix_now};
 
 /// A qualification run gives up after this long.
-const RUN_LIMIT: Duration = Duration::from_secs(180);
+const RUN_LIMIT: Duration = Duration::from_secs(600);
 
 /// Every relay of the lists, normalised, once.
 pub fn relays_of(lists: &[&RelayDirectory]) -> Vec<String> {
