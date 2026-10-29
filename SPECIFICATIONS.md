@@ -6,7 +6,7 @@ section (D1 à D14).
 ## Objectifs
 
 Un client BitChat « console » pour ordinateur, dans la continuité de
-[bitchat-geohash](../bitchat-geohash/SPECIFICATIONS.md) :
+[bitchat-geohash](https://github.com/wvmscs/bitchat-geohash/blob/main/SPECIFICATIONS.md) :
 
 1. Se placer sur un geohash et suivre ce canal **et ses 8 voisins** (même précision).
 2. Pour chacune des 9 cellules, prendre les relais que choisissent **iOS et Android** (union
@@ -20,12 +20,12 @@ Un client BitChat « console » pour ordinateur, dans la continuité de
 9. Même approche CLI que bitchat-geohash ; serveur web interne, affichage dans le navigateur ;
    fenêtre console superposable à la carte de bitchat-geohash et qui suit le geohash choisi.
 10. Plus tard : stratégies de sélection des relais interchangeables (AS, puis A0 à A6 de
-    `bitchat-envelope/Documents/geohash-relays-requirements-and-alternatives.md`), dans une
+    [geohash-relays-requirements-and-alternatives.md](https://github.com/wvmscs/geohash-relays/blob/strategies/docs/geohash-relays-requirements-and-alternatives.md)), dans une
     **crate commune** isolée, à proposer ensuite aux mainteneurs de BitChat iOS et Android.
 
 ## Ce que fait l'app (rétro-ingénierie, iOS 1.8.0)
 
-Sources : dépôt local `~/Developments_local/bitchat` (v1.8.0) et le document d'alternatives
+Sources : [permissionlesstech/bitchat](https://github.com/permissionlesstech/bitchat) au tag `v1.8.0` et le document d'alternatives
 ci-dessus (§1), qui couvre aussi Android.
 
 | Sujet | Comportement de l'app | Conséquence pour la console |
@@ -121,7 +121,7 @@ ci-dessus (§1), qui couvre aussi Android.
 
 * Hors ligne : relais de test local (comme `TestRelay` de bitchat-geohash) ; Tor contourné
   **seulement** pour une adresse de bouclage, et seulement dans les tests.
-* Réseau réel : publication uniquement sur `wss://relay.famillevital.club` avec des clés
+* Réseau réel : publication uniquement sur `$BITCHAT_TEST_RELAY` avec des clés
   jetables, sauf demande explicite de l'utilisateur.
 
 ## Décisions à prendre
@@ -139,6 +139,6 @@ ci-dessus (§1), qui couvre aussi Android.
 | D9 | Images | Liens seulement à la première version ; dépôt d'images (Blossom ou autre, via Tor) plus tard |
 | D10 | Superposition à la carte ✅ (réalisée autrement : D26 de `PLAN_ET1.md`, relais d'une carte lancée à côté) | Le binaire console embarque le moniteur et la carte de bitchat-geohash (dépendance git sur `v0.1.0`) et affiche la console en panneau flottant au-dessus ; un clic sur la carte choisit le geohash |
 | D11 | Conservation | Messages reçus en mémoire seulement ; historique local en option |
-| D12 | Dépôt ✅ | `wvmscs/bitchat-console`, privé, GPL-3.0-only, autonome (`[workspace]` propre : le `Cargo.toml` du workspace `Nostr/` reste intact) |
+| D12 | Dépôt ✅ | `wvmscs/bitchat-console`, GPL-3.0-only à l'époque (GPL-3.0-or-later depuis), autonome (`[workspace]` propre) |
 | D13 | Notes de lieu (kind 1) | Hors périmètre de la première version |
 | D14 | Pont maillage (`r`) et dépôts courrier (1401) | Hors périmètre |

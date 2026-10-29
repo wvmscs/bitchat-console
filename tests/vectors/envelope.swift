@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Test vectors for the BitChat private envelope encryption (tests/dm.rs),
-// with the app's own XChaCha20-Poly1305 code. Run from the crate:
+// with the app's own XChaCha20-Poly1305 code. $BITCHAT_SRC is a checkout of
+// https://github.com/permissionlesstech/bitchat at tag v1.8.0. Run from the crate:
 //
-//   cat ~/Developments_local/bitchat/bitchat/Nostr/XChaCha20Poly1305Compat.swift \
+//   cat $BITCHAT_SRC/bitchat/Nostr/XChaCha20Poly1305Compat.swift \
 //       tests/vectors/envelope.swift | swift -
 //
 // Fixed ECDH output (a compressed point, 33 bytes) and nonce: the key

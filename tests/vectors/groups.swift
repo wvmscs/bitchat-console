@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Checks a group state and a group message made by the console with the
-// app's own GroupProtocol.swift. Run from the crate:
+// app's own GroupProtocol.swift ($BITCHAT_SRC: a checkout of
+// https://github.com/permissionlesstech/bitchat at tag v1.8.0). Run from the crate:
 //
 //   cargo run -q --example group_vectors | cat tests/vectors/groups_shim.swift \
-//     <(grep -v '^import BitFoundation' ~/Developments_local/bitchat/bitchat/Services/Groups/GroupProtocol.swift) \
+//     <(grep -v '^import BitFoundation' $BITCHAT_SRC/bitchat/Services/Groups/GroupProtocol.swift) \
 //     tests/vectors/groups.swift > /tmp/g.swift && swift /tmp/g.swift
 //
 // (stdin: state hex, message hex, key hex).

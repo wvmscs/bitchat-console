@@ -3,7 +3,7 @@
 Guidance for coding agents (and humans) working in this crate.
 
 ## What this is
-bitchat-console s'inscrit dans la continuité de bitchat-geohash (voir ../bitchat-geohash/AGENTS.md).
+bitchat-console s'inscrit dans la continuité de [bitchat-geohash](https://github.com/wvmscs/bitchat-geohash) (voir son `AGENTS.md`).
 
 le but est ici de se connecter à un geohash, de selectionner tous les relais (fusion ios et android) associés au geohash et de se mettre à l'écoute des messages concernant ce geohash et ses 8 voisins.
 
@@ -35,23 +35,23 @@ On devra également pouvoir envoyer des messages, images (ou liens) sur les rela
 ## Future
 Sur la base du travail effectué pour Console,
 
-- on devra pouvoir modulairement mettre en ouvre les différentes stratégies alternatives décrites dans le document ../bitchat-envelope/Documents/geohash-relays-requirements-and-alternatives.md
+- on devra pouvoir modulairement mettre en ouvre les différentes stratégies alternatives décrites dans le document [geohash-relays-requirements-and-alternatives.md](https://github.com/wvmscs/geohash-relays/blob/strategies/docs/geohash-relays-requirements-and-alternatives.md)
 
 - a cette fin toutes les fonctions de sélection des relais devront être soigneusement isolées.
 
 - on implémentra, outre la simulation  des comportements actuels ios/android (AS), les stratégies A0 à A6.
 ---
 
-The sections below were added in lot 0 (28/10/2026) and follow `../bitchat-geohash/AGENTS.md`.
+The sections below were added in lot 0 (28/10/2026) and follow bitchat-geohash's `AGENTS.md`.
 The spec is [SPECIFICATIONS.md](SPECIFICATIONS.md) (decisions D1–D14); progress and the
 other decisions are in [PLAN_ET1.md](PLAN_ET1.md).
 
 ## Constraints
 
 ### Do NOT
-- Modify `bitchat-envelope`, `nip90-dvm`, the workspace `Nostr/Cargo.toml` or `src/`
-  (read-only); ask first if a change there looks necessary. `geohash-relays`,
-  `bitchat-geohash`, `bitchat-launcher` and `bitchat-web` follow their own `AGENTS.md`.
+- Modify another repository from here: `geohash-relays`, `geohash-relays-net`,
+  `bitchat-geohash` and `bitchat-launcher` follow their own `AGENTS.md`. Rules that only
+  concern the author's local checkout, if any, are in `AGENTS.local.md` (not committed).
 - Connect to a relay without Tor (D1). A direct connection is allowed only to a loopback
   address, and only in tests.
 - Publish anything on public relays or real channels from tests or by agents. Closed-loop
@@ -68,8 +68,9 @@ other decisions are in [PLAN_ET1.md](PLAN_ET1.md).
 - Keep `PLAN_ET1.md` up to date: boxes, dashboard, dated journal line, decisions.
 - Run the commands below before each commit.
 - Keep wire formats identical to the BitChat app (D17): kinds, tags, DM envelope, group
-  packets. Check them against the Swift sources (`~/Developments_local/bitchat`, v1.8.0) with
-  test vectors.
+  packets. Check them against the Swift sources (a checkout of
+  [permissionlesstech/bitchat](https://github.com/permissionlesstech/bitchat) at tag `v1.8.0`,
+  `$BITCHAT_SRC` in `tests/vectors/`) with test vectors.
 
 ### Others
 - Own git repository (`origin` = `git@github.com:wvmscs/bitchat-console.git`, branch `main`).

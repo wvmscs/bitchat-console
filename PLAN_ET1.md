@@ -36,8 +36,7 @@ dépendent de 14 ; 17 dépend de 14 et 16.
 ### Lot 0 : mise en place ✅
 
 - [x] Dépôts git `bitchat-console` (GPL-3.0-only) et `geohash-relays` (**Unlicense**, D18)
-      sur GitHub `wvmscs`, privés, chacun avec son propre `[workspace]` : le `Cargo.toml` de
-      `Nostr/` reste intact.
+      sur GitHub `wvmscs`, chacun avec son propre `[workspace]`.
 - [x] Squelettes des deux crates, type d'erreur, journalisation (`tracing`), CI locale
       (`fmt`, `clippy -D warnings`, tests). Les dépendances de D15 arrivent avec les lots qui
       s'en servent.
@@ -143,7 +142,7 @@ dépendent de 14 ; 17 dépend de 14 et 16.
       clé de la cellule, preuve de travail ≥ 8 bits, `OK` pris en compte, voisin avec sa
       propre clé, refus hors zone et message vide, marque `teleport`, présences sur
       `u0`/`u09t`/`u09tv` puis de nouveau, plus rien une fois téléporté.
-- [x] Boucle fermée sur `relay.famillevital.club`, par Tor (Arti, lot 11) : deux consoles à
+- [x] Boucle fermée sur `$BITCHAT_TEST_RELAY`, par Tor (Arti, lot 11) : deux consoles à
       graines jetables, message de l'une vu par l'autre en 0,11 s.
 
 ### Lot 6 : messages privés ✅
@@ -171,7 +170,7 @@ dépendent de 14 ; 17 dépend de 14 et 16.
       `mark_read(pair)` ; états `sent` → `relayed` → `delivered` → `read`, jamais en arrière.
 - [x] Tests : 2 consoles sur un relais de test (aller-retour, accusés, réponse), refus (trop
       long, cellule non utilisée, clé invalide, vide) ; **essai réel par Tor** sur
-      `relay.famillevital.club` : DM reçu en 0,26 s, « délivré » en 0,37 s.
+      `$BITCHAT_TEST_RELAY` : DM reçu en 0,26 s, « délivré » en 0,37 s.
 - [ ] Essai avec l'app de l'utilisateur (DM de la console vers l'app et retour) : à faire
       avec lui (lot 12).
 
@@ -285,7 +284,7 @@ dépendent de 14 ; 17 dépend de 14 et 16.
 - [x] Tests : 3 consoles (création, invitation et consentement, messages dans les deux sens,
       3ᵉ membre et époque 3 pour tous, retrait et impossibilité d'écrire ensuite, refus pour
       un non-créateur, destruction), refus d'une invitation déclinée. **Essai réel par Tor**
-      sur `relay.famillevital.club` : groupe rejoint en 0,77 s, message en 0,16 s.
+      sur `$BITCHAT_TEST_RELAY` : groupe rejoint en 0,77 s, message en 0,16 s.
 - [ ] Crate Bluetooth (maillage BitChat) et PR vers l'app pour le transport Nostr des
       groupes : étapes suivantes (D6).
 
@@ -303,14 +302,14 @@ installer.
       Test du cas « connexion gardée » ajouté.
 - [x] Essai réel (`tests/real_tor.rs`, `--ignored`) : Tor démarré en 0,9 s (cache), liste iOS
       officielle par Tor (326 relais) en 0,8 s, 18 connexions en 2,8 s, boucle fermée sur
-      `relay.famillevital.club` en 0,11 s. `tests/real_tor_diag.rs` : chaque étape d'un GET
+      `$BITCHAT_TEST_RELAY` en 0,11 s. `tests/real_tor_diag.rs` : chaque étape d'un GET
       HTTPS par Tor, chronométrée.
 
 ### Lot 12 : validation réelle ⏳
 
 Fait par l'agent, seul :
 
-- [x] Boucle fermée par Tor (Arti) sur `relay.famillevital.club`, graines jetables
+- [x] Boucle fermée par Tor (Arti) sur `$BITCHAT_TEST_RELAY`, graines jetables
       (`tests/real_tor.rs`) : liste iOS officielle par Tor, message vu par une autre console
       en 0,1 à 0,4 s, DM reçu et accusé « délivré », groupe rejoint et message de groupe.
 - [x] Binaire réel avec Arti, page pilotée dans Chrome headless (lots 7 à 9), sur le relais
@@ -464,8 +463,8 @@ Demandé dans [EVOLUTION_01-UI.md](EVOLUTION_01-UI.md) (28/10/2026).
 - [x] `skills/bitchat-history/SKILL.md` pour l'outil, l'API et le schéma (IA locale) : règles
       (local seulement, `delete`/`update` plutôt qu'à la main, `remove`/`purge` = archives,
       ne pas toucher `since` ni les droits, demander avant les opérations destructrices).
-- [x] bitchat-web : `bitchat-history` dans les paquets (signé comme les autres) dès que le
-      commit de la console l'a.
+- [x] Paquets d'installation : `bitchat-history` livré et signé comme les autres binaires dès
+      que le commit de la console l'a.
 
 ### Lot 18 : derrière un proxy TLS ✅
 
@@ -517,7 +516,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 - **Arti** : API en version 0.x, mises à jour fréquentes.
 - **Publication réelle** : tout envoi automatique (présences, planifiés) est visible des
   autres utilisateurs ; ne jamais l'activer pendant les tests hors de
-  `relay.famillevital.club`.
+  `$BITCHAT_TEST_RELAY`.
 
 ## Journal
 
@@ -527,7 +526,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 28/10/2026 | — | D15 (dépendances) et D17 (neutralité) validées ; D16 (stockage) en discussion : question Redis. |
 | 28/10/2026 | — | D16 validée (mémoire bornée + SQLite, pas de Redis à l'étape 1). Lot 0 lancé. |
 | 28/10/2026 | 0 | D18 : `geohash-relays` sous Unlicense (iOS : Unlicense, Android : GPL-3.0). Crates `bitchat-console` et `geohash-relays` créées (squelettes, `[workspace]` propre, fmt, clippy et tests verts), dépôts git locaux, dépôts GitHub privés créés et reliés (`origin`), rien de poussé. |
-| 28/10/2026 | 0 | Lot 0 commité dans les deux dépôts (`977e4cd` console, `4861316` geohash-relays) et poussé. L'utilisateur laisse l'agent poursuivre seul (un commit par lot, CHANGELOG, décisions tracées) ; relais `relay.famillevital.club` autorisé pour tous les tests. |
+| 28/10/2026 | 0 | Lot 0 commité dans les deux dépôts (`977e4cd` console, `4861316` geohash-relays) et poussé. L'utilisateur laisse l'agent poursuivre seul (un commit par lot, CHANGELOG, décisions tracées) ; relais `$BITCHAT_TEST_RELAY` autorisé pour tous les tests. |
 | 28/10/2026 | 1 | `geohash-relays` : listes, sélection (portées de bitchat-geohash sans réseau), module `geohash` maison (D19), `Strategy`/`AppStrategy`, README. 24 tests (17 de sélection repris tels quels), clippy et rustdoc propres. Commité `55f63cd`. |
 | 28/10/2026 | 2 | Connecteur : trait `Connector`, `Socks5` (isolation par identifiant, D20), `Loopback` (tests seulement), `Error::TorUnavailable`. 7 tests (proxy SOCKS5 de test). `tor` n'est pas installé sur la machine : essai réel avec Tor reporté au lot 11 (Arti, sans rien installer) ou à l'utilisateur. |
 | 28/10/2026 | 3 | Module `identity` (graine, `CellKey`, `NoiseIdentity`, `Keys`), dépendances `k256`, `sha2`, `hmac`, `rand_core`, `x25519-dalek`, `ed25519-dalek` (D15). Vecteurs CryptoKit identiques. `geohash-relays` en dépendance git (SSH, `git-fetch-with-cli`), verrouillée sur `55f63cd`. 13 tests. |

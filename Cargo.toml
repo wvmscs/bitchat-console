@@ -11,8 +11,7 @@ description = "BitChat console for location channels (geohash): read and write a
 license = "GPL-3.0-or-later"
 repository = "https://github.com/wvmscs/bitchat-console"
 
-# Own workspace: the crate builds on its own, also inside the local `Nostr/`
-# directory, whose workspace does not list it.
+# Own workspace: the crate builds on its own, also inside another workspace.
 [workspace]
 
 [dependencies]
