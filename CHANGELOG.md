@@ -11,6 +11,10 @@
 ### Added
 - `Console::set_strategy`: the relay strategy changes on the fly, the connections follow.
 - `--strategy AS` (the alternatives of geohash-relays as they come), module `strategies`.
+- `--strategy A0` (lot 3 of geohash-relays): one list (the iOS one), the iOS rule, write to 8
+  relays, read from 5, a failed relay replaced by the next one (dead after three failed
+  attempts, or refused for authentication; tried again after 10 min); `--shared-relays 0|1|2`.
+  `ConsoleConfig::rebuild`.
 - `--republish` (A4 of geohash-relays, off by default): the console republishes, between the
   iOS and the Android relays of each followed cell, the events one set has and the other has
   not, once per event, at most 60 per minute; it follows the area. Module `republish`.

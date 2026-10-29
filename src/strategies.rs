@@ -7,21 +7,28 @@
 
 use std::sync::Arc;
 
-use geohash_relays::{AppStrategy, Apps, RelayDirectory, Strategy};
+use geohash_relays::a0::SharedStrategy;
+use geohash_relays::{AppStrategy, Apps, RelayDirectory, RelayHealth, Strategy};
+
+use crate::console::Rebuild;
 
 /// A strategy name of `--strategy`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Name {
     /// The apps' choice (`--apps` says which).
     As,
+    /// One list (the iOS one) and the iOS rule, write 8, read 5, failed
+    /// relays replaced, `shared` shared relays.
+    A0,
 }
 
 impl Name {
-    pub const ALL: &'static str = "AS";
+    pub const ALL: &'static str = "AS, A0";
 
     pub fn parse(s: &str) -> Option<Name> {
         match s.to_ascii_uppercase().as_str() {
             "AS" => Some(Name::As),
+            "A0" => Some(Name::A0),
             _ => None,
         }
     }
@@ -32,15 +39,29 @@ pub struct Inputs {
     pub ios: RelayDirectory,
     pub android: Option<RelayDirectory>,
     pub apps: Apps,
+    /// A0: shared relays added to every cell (0 to 2).
+    pub shared: usize,
 }
 
-/// The strategy `name` on these lists.
-pub fn build(name: Name, inputs: &Inputs) -> Arc<dyn Strategy> {
+/// The strategy `name` on these lists, and how to rebuild it when relays
+/// fail (strategies that replace failed relays only).
+pub fn build(name: Name, inputs: &Inputs) -> (Arc<dyn Strategy>, Option<Rebuild>) {
     match name {
-        Name::As => Arc::new(AppStrategy::new(
-            Some(inputs.ios.clone()),
-            inputs.android.clone(),
-            inputs.apps,
-        )),
+        Name::As => (
+            Arc::new(AppStrategy::new(
+                Some(inputs.ios.clone()),
+                inputs.android.clone(),
+                inputs.apps,
+            )),
+            None,
+        ),
+        Name::A0 => {
+            let base =
+                SharedStrategy::from_directory(inputs.ios.clone()).with_shared(inputs.shared);
+            let rebuild: Rebuild = Arc::new(move |health: &RelayHealth| {
+                Arc::new(base.clone().with_health(health.clone())) as Arc<dyn Strategy>
+            });
+            (rebuild(&RelayHealth::new()), Some(rebuild))
+        }
     }
 }

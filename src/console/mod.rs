@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use rand_core::{OsRng, RngCore};
 
-use geohash_relays::Strategy;
+use geohash_relays::{Health, RelayHealth, Strategy, normalize_url};
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -45,9 +45,16 @@ pub const KIND_PRESENCE: u32 = 20001;
 /// The app's channel levels (geohash lengths); 3 is not a channel.
 pub const CHANNEL_LEVELS: [usize; 5] = [2, 4, 5, 6, 7];
 
+/// Rebuilds the strategy from what the console knows of failed relays
+/// (A0 of geohash-relays: failed relays replaced).
+pub type Rebuild = Arc<dyn Fn(&RelayHealth) -> Arc<dyn Strategy> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct ConsoleConfig {
     pub strategy: Arc<dyn Strategy>,
+    /// With a strategy that replaces failed relays: how to rebuild it when
+    /// relays fail or come back. `None`: the strategy stays as it is.
+    pub rebuild: Option<Rebuild>,
     pub connector: Arc<dyn Connector>,
     /// Root of the cell keys.
     pub seed: Arc<Seed>,
@@ -88,6 +95,7 @@ impl ConsoleConfig {
     ) -> Self {
         ConsoleConfig {
             strategy,
+            rebuild: None,
             connector,
             seed,
             pow_bits: crate::pow::TARGET_BITS,
@@ -179,6 +187,10 @@ pub struct AreaStatus {
 /// Delay before a connection no longer wanted is closed (it may still have
 /// something to send); the actual close happens at the next control tick.
 const CLOSE_DELAY: Duration = Duration::from_secs(10);
+
+/// A channel relay counts as dead once its connection waits this long
+/// before trying again (the third failure in a row: 1, 2, 4 s).
+const DEAD_AFTER_RETRY_SECS: u64 = 4;
 
 /// How far back the private-message inbox asks (iOS: 24 h).
 pub const DM_LOOKBACK_SECS: i64 = 24 * 3600;
@@ -393,6 +405,7 @@ impl Console {
             dm_wraps: HashMap::new(),
             read_sent: HashSet::new(),
             states: HashMap::new(),
+            health: HashMap::new(),
             seen: Seen::default(),
             participants: HashMap::new(),
             relay_tx,
@@ -795,6 +808,9 @@ struct State {
     /// Received message IDs already acknowledged as read.
     read_sent: HashSet<String>,
     states: HashMap<(String, String), ConnState>,
+    /// Channel relays found failed, and since when (Unix seconds); forgotten
+    /// after `A0_HEALTH_TTL_SECS`, then tried again.
+    health: HashMap<String, (Health, i64)>,
     seen: Seen,
     /// cell -> key -> last seen.
     participants: HashMap<String, HashMap<String, Known>>,
@@ -1572,6 +1588,7 @@ impl State {
                     if let ConnState::Abandoned { reason } = &state {
                         tracing::warn!(relay = %key.0, cell = %key.1, %reason, "relay given up");
                     }
+                    self.note_health(&key.0, &state);
                     self.states.insert(key, state);
                     self.emit(ConsoleEvent::Relays);
                 }
@@ -1767,10 +1784,64 @@ impl State {
         }
     }
 
+    /// Keeps the health of the channel relays, for a strategy that replaces
+    /// failed ones: dead after a few failed attempts, refused when it
+    /// requires an authentication it did not accept; back when connected.
+    fn note_health(&mut self, relay: &str, state: &ConnState) {
+        if self.config.rebuild.is_none() || self.config.dm_relays.iter().any(|d| d == relay) {
+            return;
+        }
+        let url = normalize_url(relay).unwrap_or_else(|| relay.to_owned());
+        let changed = match state {
+            ConnState::Connected => self.health.remove(&url).is_some(),
+            ConnState::Waiting { retry_in_secs } if *retry_in_secs >= DEAD_AFTER_RETRY_SECS => self
+                .health
+                .insert(url, (Health::Dead, unix_now()))
+                .is_none(),
+            ConnState::Abandoned { reason } => {
+                let h = if reason.contains("auth") {
+                    Health::AuthRequired
+                } else {
+                    Health::Dead
+                };
+                self.health.insert(url, (h, unix_now())).is_none()
+            }
+            _ => false,
+        };
+        if changed {
+            self.rebuild_strategy();
+        }
+    }
+
+    fn rebuild_strategy(&mut self) {
+        let Some(rebuild) = self.config.rebuild.clone() else {
+            return;
+        };
+        let health: RelayHealth = self
+            .health
+            .iter()
+            .map(|(u, (h, _))| (u.clone(), *h))
+            .collect();
+        tracing::info!(failed = health.len(), "relays failed: strategy rebuilt");
+        self.config.strategy = rebuild(&health);
+        if let Some(g) = self.center.clone() {
+            let teleport = self.teleport;
+            if let Err(e) = self.set_area(&g, teleport) {
+                tracing::warn!(error = %e, "area not followed after a strategy change");
+            }
+        }
+    }
+
     fn on_tick(&mut self) {
         let t = tokio::time::Instant::now();
         self.closing.retain(|(until, _)| *until > t);
         let now = unix_now();
+        let before = self.health.len();
+        self.health
+            .retain(|_, (_, since)| now - *since < geohash_relays::params::A0_HEALTH_TTL_SECS);
+        if self.health.len() != before {
+            self.rebuild_strategy();
+        }
         let from = now - self.config.participant_window_secs;
         for people in self.participants.values_mut() {
             people.retain(|_, s| s.last >= from);

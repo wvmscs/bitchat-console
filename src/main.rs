@@ -6,7 +6,7 @@
 //!
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
-//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS] [--republish]
+//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0] [--shared-relays 0|1|2] [--republish]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
@@ -32,7 +32,7 @@ use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
-     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS] [--republish] \
+     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS|A0] [--shared-relays 0|1|2] [--republish] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
@@ -55,6 +55,8 @@ struct Args {
     apps: Apps,
     /// Republish between the iOS and Android relay sets (A4).
     republish: bool,
+    /// A0: shared relays added to every cell.
+    shared_relays: usize,
     /// The relay strategy (`AS` by default).
     strategy: bitchat_console::strategies::Name,
     /// Relays of private messages; `None`: the apps' defaults.
@@ -96,6 +98,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         apps: Apps::Both,
         strategy: bitchat_console::strategies::Name::As,
         republish: false,
+        shared_relays: 0,
         dm_relays: None,
         presence: true,
         history: true,
@@ -157,6 +160,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             }
             "--no-presence" => a.presence = false,
             "--republish" => a.republish = true,
+            "--shared-relays" => {
+                a.shared_relays = match value()?.as_str() {
+                    "0" => 0,
+                    "1" => 1,
+                    "2" => 2,
+                    v => return Err(format!("--shared-relays: 0, 1 or 2, got {v:?}")),
+                }
+            }
             "--no-history" => a.history = false,
             "--pow-bits" => {
                 let v = value()?;
@@ -285,10 +296,12 @@ async fn main() {
         ios,
         android,
         apps: args.apps,
+        shared: args.shared_relays,
     };
-    let strategy = bitchat_console::strategies::build(args.strategy, &inputs);
+    let (strategy, rebuild) = bitchat_console::strategies::build(args.strategy, &inputs);
     let connector = tor.clone();
     let mut config = ConsoleConfig::new(strategy, tor, Arc::new(keys.seed));
+    config.rebuild = rebuild;
     config.noise = Some(Arc::new(keys.noise));
     config.presence = args.presence;
     let db_path = args.data_dir.join(bitchat_console::db::DB_FILE);
