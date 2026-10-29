@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use bitchat_console::connector::Loopback;
 use bitchat_console::console::{Console, DirectMessage, DmStatus, KIND_MESSAGE};
-use bitchat_console::history::{HISTORY_FILE, History};
+use bitchat_console::history::{self, HISTORY_FILE, History};
 use bitchat_console::identity::Seed;
 use bitchat_console::nostr::unix_now;
 use common::*;
@@ -226,9 +226,7 @@ async fn a_deleted_history_comes_back_empty() {
     assert_eq!(rows(&path).len(), 1);
 
     // A full wipe by the cron, while the console runs.
-    for ext in ["", "-wal", "-shm"] {
-        let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
-    }
+    history::wipe(&path).unwrap();
     let wiped = unix_now();
     until("the file again", async || path.exists().then_some(())).await;
     c.send("après", None, None).await.unwrap();

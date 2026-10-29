@@ -821,12 +821,18 @@ pub fn archive_path(dir: &Path, t: i64) -> PathBuf {
     p
 }
 
-/// Deletes the history (the console makes a new one within seconds).
+/// Deletes the history (the console makes a new one within seconds). The
+/// WAL and shared-memory files go first: a console that notices the missing
+/// base makes new ones at once, and deleting them then would lose what it
+/// writes next.
 pub fn wipe(path: &Path) -> Result<()> {
-    std::fs::remove_file(path)?;
+    if !path.exists() {
+        return Err(std::io::Error::from(std::io::ErrorKind::NotFound).into());
+    }
     for p in side_files(path) {
         let _ = std::fs::remove_file(p);
     }
+    std::fs::remove_file(path)?;
     Ok(())
 }
 
