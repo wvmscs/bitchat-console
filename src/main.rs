@@ -6,7 +6,7 @@
 //!
 //!   bitchat-console <geohash> [--teleport] [--data-dir ~/.bitchat-console]
 //!       [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>]
-//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS]
+//!       [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS] [--republish]
 //!       [--dm-relays <url,url>] [--no-history]
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]
@@ -32,7 +32,7 @@ use geohash_relays::{Apps, Platform};
 
 const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <dir>] \
      [--tor-socks 127.0.0.1:9050 | --arti] [--relays-csv <url|path>] \
-     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS] \
+     [--android-csv <url|path> | --no-android] [--apps both|ios|android] [--strategy AS] [--republish] \
      [--dm-relays <url,url>] [--no-history] [--no-presence] \
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem>] [--map http://127.0.0.1:8080] [--open] [--verbose]";
@@ -53,6 +53,8 @@ struct Args {
     ios: ListSource,
     android: Option<ListSource>,
     apps: Apps,
+    /// Republish between the iOS and Android relay sets (A4).
+    republish: bool,
     /// The relay strategy (`AS` by default).
     strategy: bitchat_console::strategies::Name,
     /// Relays of private messages; `None`: the apps' defaults.
@@ -93,6 +95,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         android: Some(ListSource::official(Platform::Android)),
         apps: Apps::Both,
         strategy: bitchat_console::strategies::Name::As,
+        republish: false,
         dm_relays: None,
         presence: true,
         history: true,
@@ -153,6 +156,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                 )
             }
             "--no-presence" => a.presence = false,
+            "--republish" => a.republish = true,
             "--no-history" => a.history = false,
             "--pow-bits" => {
                 let v = value()?;
@@ -283,6 +287,7 @@ async fn main() {
         apps: args.apps,
     };
     let strategy = bitchat_console::strategies::build(args.strategy, &inputs);
+    let connector = tor.clone();
     let mut config = ConsoleConfig::new(strategy, tor, Arc::new(keys.seed));
     config.noise = Some(Arc::new(keys.noise));
     config.presence = args.presence;
@@ -313,6 +318,15 @@ async fn main() {
         cells.len() - 1,
         if args.teleport { " (teleported)" } else { "" }
     );
+    if args.republish {
+        eprintln!("republishing between the iOS and Android relays of the area (A4)");
+        bitchat_console::republish::spawn(
+            console.clone(),
+            inputs.ios.clone(),
+            inputs.android.clone(),
+            connector,
+        );
+    }
     let server = serve(console.clone(), args.server.clone())
         .await
         .unwrap_or_else(|e| fail("cannot serve the page", e));

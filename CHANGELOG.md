@@ -11,6 +11,9 @@
 ### Added
 - `Console::set_strategy`: the relay strategy changes on the fly, the connections follow.
 - `--strategy AS` (the alternatives of geohash-relays as they come), module `strategies`.
+- `--republish` (A4 of geohash-relays, off by default): the console republishes, between the
+  iOS and the Android relays of each followed cell, the events one set has and the other has
+  not, once per event, at most 60 per minute; it follows the area. Module `republish`.
 
 ### Changed
 - `geohash-relays` fetched over HTTPS at its tag `v0.1.0` (was SSH, branch `main`): the crate builds without a GitHub SSH key once the repositories are public.

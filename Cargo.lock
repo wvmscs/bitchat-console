@@ -984,7 +984,7 @@ dependencies = [
  "quote",
  "sha3 0.12.0",
  "strum",
- "syn 2.0.119",
+ "syn 3.0.9",
  "unicode-ident",
  "void",
 ]
@@ -1532,7 +1532,7 @@ dependencies = [
 [[package]]
 name = "geohash-relays"
 version = "0.1.0"
-source = "git+https://github.com/wvmscs/geohash-relays.git?branch=strategies#76543513b88f5733ff6509da44b40c325e4963ac"
+source = "git+https://github.com/wvmscs/geohash-relays.git?branch=strategies#79609e84cf7f42c1d75d1148f253d5e552ccaa18"
 dependencies = [
  "thiserror 2.0.21",
 ]
@@ -1540,7 +1540,7 @@ dependencies = [
 [[package]]
 name = "geohash-relays-net"
 version = "0.1.0"
-source = "git+https://github.com/wvmscs/geohash-relays-net.git?branch=main#882c266a1187530b783f9f550eeddb5b68694dad"
+source = "git+https://github.com/wvmscs/geohash-relays-net.git?branch=main#46fa2e70b62276cb06172ae27a54a50c39aad807"
 dependencies = [
  "arti-client",
  "futures-util",
@@ -2893,7 +2893,7 @@ dependencies = [
  "derive-deftly",
  "libc",
  "paste",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

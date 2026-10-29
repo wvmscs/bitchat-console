@@ -16,6 +16,7 @@ pub mod history;
 pub mod identity;
 pub mod packet;
 pub mod pow;
+pub mod republish;
 pub mod server;
 pub mod store;
 pub mod strategies;

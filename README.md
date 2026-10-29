@@ -37,7 +37,7 @@ bitchat-geohash u09t --listen 127.0.0.1:8080 &
 cargo run --release --features arti -- u09tv --map http://127.0.0.1:8080 --open
 ```
 
-Run the binary with a wrong option to list them all (`--teleport`, `--tor-socks`, `--apps`, `--strategy`,
+Run the binary with a wrong option to list them all (`--teleport`, `--tor-socks`, `--apps`, `--strategy`, `--republish`,
 `--dm-relays`, `--no-presence`, `--pow-bits`, `--listen`, TLS…).
 
 ## History
