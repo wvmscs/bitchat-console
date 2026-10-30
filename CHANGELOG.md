@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- geohash-relays: the strategies other than `AS` count a server once, whatever the paths it is
+  named under (`--strategy A0`, `A1`, `A5`, and A3's announced relays).
+
 ## [0.2.0] - 2026-10-30
 
 ### Fixed
