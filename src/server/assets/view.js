@@ -219,3 +219,11 @@ export function convoOver(convo, present, now) {
   const last = Math.max(0, ...convo.messages.filter(d => !d.own).map(d => d.created_at));
   return hasLeft(present, convo.cell, convo.peer, now, last);
 }
+
+// What the cell field holds, as sent to the server (lot 19): `#U09TV` and
+// `u09tv` are the cell `u09tv`; a place or an IP address stays as typed.
+export function typedCell(text) {
+  const t = text.trim();
+  const g = t.replace(/^#\s*/, "").toLowerCase();
+  return /^[0-9b-hjkmnp-z]{1,12}$/.test(g) ? g : t;
+}

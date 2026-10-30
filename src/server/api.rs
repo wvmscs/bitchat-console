@@ -29,6 +29,8 @@ use crate::history::{History, Record};
 pub(crate) struct AppState {
     pub(crate) console: Arc<Console>,
     pub(crate) stop: watch::Receiver<bool>,
+    #[cfg(feature = "geocode")]
+    pub(crate) places: Option<Arc<crate::geocode::Places>>,
 }
 
 /// `{"error": code, "message": ...}` with a status.
@@ -59,6 +61,8 @@ impl From<Error> for ApiError {
         let (status, code) = match e {
             Error::InvalidGeohash(_) => (StatusCode::BAD_REQUEST, "invalid_geohash"),
             Error::NotAChannel(_) => (StatusCode::BAD_REQUEST, "not_a_channel"),
+            Error::PlaceNotFound => (StatusCode::NOT_FOUND, "place_not_found"),
+            Error::Geocode(_) => (StatusCode::BAD_GATEWAY, "geocode"),
             Error::NotInArea(_) => (StatusCode::UNPROCESSABLE_ENTITY, "not_in_area"),
             Error::NoArea => (StatusCode::CONFLICT, "no_area"),
             Error::EmptyMessage => (StatusCode::BAD_REQUEST, "empty_message"),
@@ -180,14 +184,52 @@ pub(crate) struct AreaBody {
     teleport: bool,
 }
 
-/// `POST /api/area {"geohash": "u09tv", "teleport": true}`.
+/// `POST /api/area {"geohash": "u09tv", "teleport": true}`. With places
+/// (lot 19, D35), `"geohash"` may also be `#u09tv`, a place or an IP
+/// address: the answer then has the `place` found.
 pub(crate) async fn area(
     State(s): State<AppState>,
     body: Result<Json<AreaBody>, JsonRejection>,
 ) -> Result<Json<Value>, ApiError> {
     let Json(b) = body?;
-    let cells = s.console.set_area(&b.geohash, b.teleport).await?;
-    Ok(Json(json!({ "cells": cells })))
+    #[cfg(feature = "geocode")]
+    let (geohash, place) = match &s.places {
+        Some(places) => {
+            let r = places.resolve(&b.geohash).await?;
+            (r.geohash, r.place)
+        }
+        None => (b.geohash, None),
+    };
+    #[cfg(not(feature = "geocode"))]
+    let (geohash, place) = (b.geohash, None::<()>);
+    let cells = s.console.set_area(&geohash, b.teleport).await?;
+    Ok(Json(json!({ "cells": cells, "place": place })))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct PlaceQuery {
+    #[cfg_attr(not(feature = "geocode"), allow(dead_code))]
+    geohash: String,
+}
+
+/// `GET /api/place?geohash=u09tv` (lot 19): the approximate name of a cell,
+/// `{"place": {"label", "source", "attribution"}}` or `{"place": null}`
+/// (open sea); `404 no_places` when the console does not look places up.
+pub(crate) async fn place(
+    State(s): State<AppState>,
+    Query(q): Query<PlaceQuery>,
+) -> Result<Json<Value>, ApiError> {
+    #[cfg(feature = "geocode")]
+    if let Some(places) = &s.places {
+        let place = places.name(&q.geohash).await?;
+        return Ok(Json(json!({ "geohash": q.geohash, "place": place })));
+    }
+    let _ = (&s, &q);
+    Err(ApiError::new(
+        StatusCode::NOT_FOUND,
+        "no_places",
+        "place names are off",
+    ))
 }
 
 #[derive(Deserialize)]

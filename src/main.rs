@@ -11,7 +11,12 @@
 //!       [--no-presence] [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote]
 //!       [--tls-cert <pem> --tls-key <pem> | --behind-proxy https://name
 //!        [--proxy-from 127.0.0.1/8,::1] [--no-proxy-check]]
-//!       [--map http://127.0.0.1:8080] [--open] [--verbose]
+//!       [--map http://127.0.0.1:8080] [--open] [--verbose] [--geoip-db <file.mmdb>]
+//!
+//! With the `geocode` feature (default), `<geohash>` may also be `#u09tv`, a
+//! place or an IP address (`"Rue de Rivoli, Paris"`, `8.8.8.8` with
+//! `--geoip-db`, the DB-IP file downloaded there if missing): the finest
+//! channel that holds it (lot 19, D35). Those lookups do not go through Tor.
 //!
 //! Every message is kept in `<data-dir>/history.sqlite` (D31), unless
 //! `--no-history`.
@@ -39,7 +44,8 @@ const USAGE: &str = "usage: bitchat-console <geohash> [--teleport] [--data-dir <
      [--pow-bits 8] [--listen 127.0.0.1:8090] [--allow-remote] \
      [--tls-cert <pem> --tls-key <pem> | --behind-proxy https://<name> \
      [--proxy-from <addr|net>,...] [--no-proxy-check]] \
-     [--map http://127.0.0.1:8080] [--open] [--verbose]";
+     [--map http://127.0.0.1:8080] [--open] [--verbose] [--geoip-db <file.mmdb>]\n\
+     <geohash>: also #geohash, a place or an IP address (built with the geocode feature)";
 
 /// Which Tor (D1, D24).
 #[derive(Debug, Clone, PartialEq)]
@@ -82,6 +88,9 @@ struct Args {
     /// Keep every message in `history.sqlite` (D31).
     history: bool,
     pow_bits: u32,
+    /// DB-IP file for IP addresses typed as cells (lot 19).
+    #[cfg_attr(not(feature = "geocode"), allow(dead_code))]
+    geoip_db: Option<PathBuf>,
     server: ServerConfig,
     open: bool,
     verbose: bool,
@@ -127,6 +136,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         presence: true,
         history: true,
         pow_bits: bitchat_console::pow::TARGET_BITS,
+        geoip_db: None,
         server: ServerConfig::default(),
         open: false,
         verbose: false,
@@ -263,6 +273,14 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--no-proxy-check" => no_check = true,
             "--open" => a.open = true,
             "--verbose" => a.verbose = true,
+            "--geoip-db" => {
+                if !cfg!(feature = "geocode") {
+                    return Err(
+                        "--geoip-db: this binary is built without the geocode feature".into(),
+                    );
+                }
+                a.geoip_db = Some(value()?.into())
+            }
             s if s.starts_with('-') => return Err(format!("unknown option {s}")),
             _ if a.geohash.is_empty() => a.geohash = arg,
             _ => return Err(format!("one geohash only, got {arg:?} too")),
@@ -341,7 +359,8 @@ fn open_browser(url: &str) {
 
 #[tokio::main]
 async fn main() {
-    let args = parse_args(std::env::args().skip(1)).unwrap_or_else(|e| {
+    #[allow(unused_mut)]
+    let mut args = parse_args(std::env::args().skip(1)).unwrap_or_else(|e| {
         eprintln!("bitchat-console: {e}\n{USAGE}");
         std::process::exit(2)
     });
@@ -355,6 +374,25 @@ async fn main() {
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
         .init();
     bitchat_console::install_crypto_provider();
+
+    // The cell typed may be a place (lot 19, D35): its channel, before
+    // anything else. Not through Tor: said in the README.
+    #[cfg(feature = "geocode")]
+    {
+        use bitchat_console::geocode::Places;
+        let places = Places::new(args.geoip_db.as_deref())
+            .await
+            .unwrap_or_else(|e| fail("cannot look places up", e));
+        let r = places
+            .resolve(&args.geohash)
+            .await
+            .unwrap_or_else(|e| fail("cannot find the cell", e));
+        if let Some(p) = &r.place {
+            eprintln!("cell: #{} for {} ({})", r.geohash, p.label, p.attribution);
+        }
+        args.geohash = r.geohash;
+        args.server.places = Some(Arc::new(places));
+    }
 
     // A busy port is found now, not after Tor and the lists.
     if args.server.listen.port() != 0

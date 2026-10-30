@@ -16,6 +16,12 @@ pub enum Error {
     Tor(String),
     #[error("invalid geohash {0:?}")]
     InvalidGeohash(String),
+    /// Looking up a typed cell (feature `geocode`): network, service,
+    /// GeoIP file.
+    #[error("{0}")]
+    Geocode(String),
+    #[error("no place found for this text: try a town, an address, or #geohash")]
+    PlaceNotFound,
     /// BitChat channels have 2, 4, 5, 6 or 7 characters.
     #[error("{0:?} is not a channel: BitChat channels have 2, 4, 5, 6 or 7 characters")]
     NotAChannel(String),

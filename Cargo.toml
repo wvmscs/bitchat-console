@@ -42,6 +42,10 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 webpki-roots = "1"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 serde = { version = "1", features = ["derive"] }
+# Cells from a place, an address or an IP address, and the approximate name
+# of a cell (feature `geocode`, lot 19, D35): BAN, Nominatim, DB-IP, in
+# direct (not through Tor). Own repository.
+geohash-lookup = { git = "https://github.com/wvmscs/geohash-lookup.git", tag = "v0.1.1", optional = true, default-features = false }
 serde_json = "1"
 # Local storage (lot 8, D16): mutes, saved and scheduled messages.
 # 0.40: the range Arti accepts (one sqlite3 link only).
@@ -55,6 +59,9 @@ rustls-pki-types = { version = "1.9", features = ["std"] }
 tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "signal", "net", "io-util", "time", "sync"] }
 
 [features]
-default = []
+# `geocode`: the cell typed may be a place or an IP address, and the page
+# names the cell followed (lot 19, D35). Its requests do not go through Tor.
+default = ["geocode"]
+geocode = ["dep:geohash-lookup"]
 # Tor in the binary (Arti) instead of a Tor daemon.
 arti = ["geohash-relays-net/arti"]

@@ -25,6 +25,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 16 | Onglet d'historique : recherche, tri, sélection, effacement ; modifications externes en direct | ✅ |
 | 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ✅ |
 | 18 | Derrière un proxy TLS (D34) : contrôle par requête, sonde au démarrage | ✅ |
+| 19 | Cellule donnée par un lieu ou une IP (`geohash-lookup`, feature `geocode`, D35), nom approximatif de la cellule | ✅ |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
 8 dépend de 5 et 7 ; 9 dépend de 7 ; 10 dépend de 6 ; 11 dépend de 2 ; 12 clôt l'étape.
@@ -481,6 +482,29 @@ amont suffit, son existence vérifiée (par requête et par une sonde au démarr
 - [x] `docs/behind-proxy.md` (Cloudflare Tunnel et Access, NGINX, Caddy), README.
 - [x] Essai réel : launcher derrière Caddy 2.11.7 (`https://localhost:8445`, certificat mkcert, `SSL_CERT_FILE` = autorité mkcert) : sonde passée, carte à `/` et console à `/console/` dans Chrome headless (aucune erreur), commandes avec l'origine publique, flux SSE de la console et de la carte, accès direct au port refusé ; essai avec le seul relais de l'utilisateur, sans présence, dossier de données jetable.
 
+### Lot 19 : cellule donnée par un lieu, nom de la cellule ✅
+
+Demande de l'utilisateur (30/10/2026) : référencer la crate `geohash-lookup` dans Console et
+Geohash pour les champs de saisie de cellule et les lignes de commande, saisir `#u09t` ou un
+texte ; géocodage inverse affiché ; intégration sous forme de feature ; requêtes en direct
+partout (pas de Tor) ; base GeoIP en option, téléchargée si absente.
+
+- [x] Feature `geocode` (par défaut), dépendance `geohash-lookup` `v0.1.1` (dépôt public,
+      tag), `deny.toml` autorise son dépôt.
+- [x] `geocode::Places` : `resolve` (`#u09tv` et `u09tv` tels quels ; un lieu ou une IP vers le
+      canal le plus fin qui le contient, `CHANNEL_LEVELS`, sinon la région autour de son
+      point), `name` (géocodage inverse, mis en cache, 256 noms).
+- [x] Serveur : `POST /api/area` résout le texte (réponse `place`), `GET /api/place`
+      (`404 no_places` sans la fonction), erreurs `404 place_not_found` et `502 geocode`.
+- [x] Binaire : cellule de départ donnée par un lieu (ligne `cell: #… for …` avec le crédit
+      des données), `--geoip-db`.
+- [x] Page : champ du haut « geohash, a place or an IP address » (infobulle : pas de Tor),
+      nom approximatif de la cellule suivie dans la barre du haut.
+- [x] README, section Privacy : ces requêtes ne passent pas par Tor.
+- [x] Tests : 1 unitaire (`geocode`), 2 de serveur (hors ligne), 1 JS ; essai réel (sans
+      présence, téléporté) : « Rue de Rivoli, Paris » → `#u09tvpj`, « Tokyo » → `#xn`, `u0a`
+      refusé.
+
 ## Décisions
 
 Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et dans la spec.
@@ -506,6 +530,7 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | D32 | Pseudo | **Choix de l'utilisateur (28/10/2026)** : un seul pseudo pour toutes les cellules, gardé par la console ; par cellule, possibilité de ne pas l'envoyer (l'app affiche alors `anon#xxxx`) | ✅ |
 | D33 | Sauvegarde et rotation | **Demande de l'utilisateur (28/10/2026)** : par cron, chaque jour, sauvegarde et compactage, puis rotation sur une base neuve qui commence 2 h avant ; suppression d'enregistrements et effacement complet possibles, base alors recréée. Rotation sans échange de fichier sous la console (proposition de l'agent, **validée le 28/10/2026**) : `VACUUM INTO` vers l'archive datée, suppression de ce qui a plus de 2 h, `VACUUM` | ✅ |
 | D34 | Derrière un proxy TLS (lot 18) | Comme D25 de bitchat-geohash : `--behind-proxy https://<nom>` remplace l'exigence de TLS hors de la boucle locale ; adresses du proxy (`--proxy-from`), HTTPS en amont, nom public ; sonde au démarrage avec jeton, refus de démarrer sinon (`--no-proxy-check`). La console n'a pas d'authentification : elle se met dans le proxy (documenté) — *demande et choix de l'utilisateur, détails par l'agent, à valider* | ✅ |
+| D35 | Cellule donnée par un lieu (lot 19) | Feature `geocode` (par défaut) avec `geohash-lookup` ; **requêtes en direct vers BAN et Nominatim, pas par Tor** (choix de l'utilisateur, exception à l'esprit de D1, qui vise les relais), dit dans le README (Privacy) et l'infobulle du champ ; jamais pour un geohash tapé ; IP par fichier DB-IP local en option (`--geoip-db`, téléchargé si absent) ; dépendance hors D15 approuvée par la demande — *demande et choix de l'utilisateur, détails par l'agent* | ✅ |
 | D17 | Neutralité de la console | Hors D5 (`teleport` au choix) et des groupes mixtes, la console ne se distingue pas de l'app sur le réseau (mêmes kinds, tags et formats) | ✅ |
 
 ## Risques
@@ -566,3 +591,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 29/10/2026 | — | Version 0.1.1 (tag `v0.1.1`), avant l'ouverture au public, à la demande de l'utilisateur. |
 | 29/10/2026 | 17 | **Défaut corrigé** (test instable sur la CI) : `wipe` effaçait la base puis ses fichiers `-wal`/`-shm` ; une console qui recréait la base entre les deux perdait ses fichiers neufs, donc ses écritures suivantes. Ordre inversé (fichiers annexes d'abord) ; le test appelle `history::wipe`. 20 passages sous Linux sans échec. |
 | 29/10/2026 | — | Version 0.1.2 (tag `v0.1.2`) : correction de `wipe`, à la demande de l'utilisateur. |
+| 30/10/2026 | 19 | Cellule donnée par un lieu ou une IP et nom approximatif de la cellule (D35), feature `geocode` avec `geohash-lookup` `v0.1.1`, à la demande de l'utilisateur. 80 tests Rust (78 sans la feature), 16 JS ; clippy propre (défaut, sans feature, arti). Essai réel : « Rue de Rivoli, Paris » → `#u09tvpj`, « Tokyo » → `#xn`. |

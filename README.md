@@ -49,6 +49,19 @@ bitchat-geohash u09t --listen 127.0.0.1:8080 &
 cargo run --release --features arti -- u09tv --map http://127.0.0.1:8080 --open
 ```
 
+The cell may also be `#u09tv`, a place or an IP address (feature `geocode`, on by
+default), looked up with [geohash-lookup](https://github.com/wvmscs/geohash-lookup): the
+finest channel (2, 4, 5, 6 or 7 characters) that holds it, in the top field of the page too,
+which then shows the approximate name of the cell followed.
+
+```sh
+cargo run --release --features arti -- "Rue de Rivoli, Paris" --open   # #u09tvpj
+cargo run --release --features arti -- 8.8.8.8 --geoip-db ~/.bitchat-console/dbip-city-lite.mmdb
+```
+
+A bare geohash stays a geohash; one word of letters and digits that is not one (`u0a`) is
+refused. Build with `--no-default-features` to leave places out.
+
 To serve the page on a public name, a TLS proxy in front (Cloudflare Tunnel, NGINX, Caddy)
 is enough: `--behind-proxy https://bitchat.example.org`. The console then accepts only what
 comes through the proxy in HTTPS, and checks at start that the name leads to it. Put a login
@@ -84,6 +97,14 @@ comes back empty. Nothing about other people goes to the logs, nor to `console.s
 holds the keys you mute, your saved messages, groups, your nickname and the cells where you
 choose not to send it. Images in messages are shown as links and
 never loaded. With `--map`, the map tiles are loaded by the browser directly, not through Tor.
+
+**Places are looked up in direct, not through Tor** (feature `geocode`): a place typed in the
+cell field or on the command line goes to BAN (French addresses) and Nominatim
+(OpenStreetMap), which see it with your IP address; so does the name of the cell followed
+(its centre, asked once per cell). A geohash typed is never sent there. IP addresses are
+looked up locally, in the DB-IP file of `--geoip-db` (downloaded there if missing, about
+130 MB). Typed texts are not logged. To keep everything behind Tor, follow geohashes only, or
+build with `--no-default-features`.
 
 ## Tests
 

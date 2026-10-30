@@ -44,6 +44,10 @@ pub struct ServerConfig {
     /// `/`, with the console floating over it; the console is always at
     /// `/console/` too (lot 9, D26).
     pub map: Option<String>,
+    /// Places for the cell field and the name of the cell (lot 19, D35):
+    /// none, geohashes only.
+    #[cfg(feature = "geocode")]
+    pub places: Option<Arc<crate::geocode::Places>>,
 }
 
 impl Default for ServerConfig {
@@ -55,6 +59,8 @@ impl Default for ServerConfig {
             proxy: None,
             max_body: 64 * 1024,
             map: None,
+            #[cfg(feature = "geocode")]
+            places: None,
         }
     }
 }
@@ -122,6 +128,7 @@ fn console_routes(prefix: &str) -> Router<api::AppState> {
         .route(&p("/api/participants"), get(api::participants))
         .route(&p("/api/events"), get(api::events))
         .route(&p("/api/area"), post(api::area))
+        .route(&p("/api/place"), get(api::place))
         .route(&p("/api/send"), post(api::send))
         .route(&p("/api/dm"), post(api::dm))
         .route(&p("/api/dm/delete"), post(api::delete_dms))
@@ -192,6 +199,8 @@ pub async fn serve(console: Arc<Console>, config: ServerConfig) -> Result<Server
     let state = api::AppState {
         console,
         stop: stop_rx.clone(),
+        #[cfg(feature = "geocode")]
+        places: config.places.clone(),
     };
     let guard = Arc::new(guard::Guard::new(
         addr,

@@ -7,7 +7,7 @@
 
 import {
   author, clock, conversations, convoOver, hasLeft, feed, feedCells, gridOrder, groupTexts, isImage, linkify, nicknames, people, personNote,
-  relayCount, repeatLabel, statusMark, unixFromLocal, unreadTotal, visible,
+  relayCount, repeatLabel, statusMark, typedCell, unixFromLocal, unreadTotal, visible,
 } from "./view.js";
 
 function el(tag, cls, text) {
@@ -278,6 +278,7 @@ function buildTop() {
   ui.title = el("h1", null, "BitChat console");
   ui.geohash = el("input");
   ui.geohash.placeholder = "geohash (2, 4, 5, 6 or 7 characters)";
+  ui.geohash.title = "a geohash (u09tv or #u09tv)";
   ui.geohash.setAttribute("aria-label", "geohash");
   ui.teleport = el("input");
   ui.teleport.type = "checkbox";
@@ -294,6 +295,8 @@ function buildTop() {
   ui.geohash.addEventListener("input", () => { ui.edited = true; });
   ui.link = el("span", "link");
   ui.info = el("span", "muted");
+  // The approximate name of the cell followed (lot 19).
+  ui.place = el("span", "place muted small");
   ui.error = el("span", "warn");
   ui.sound = el("input");
   ui.sound.type = "checkbox";
@@ -313,16 +316,19 @@ function buildTop() {
   ui.history.target = "_blank";
   ui.history.rel = "noopener";
   ui.history.title = "every message kept, for the cell shown: search, sort, delete";
-  top.append(ui.title, ui.geohash, tl, ui.follow, ui.link, ui.info, sl, ui.unread, ui.history, ui.error);
+  top.append(ui.title, ui.geohash, tl, ui.follow, ui.link, ui.info, ui.place, sl, ui.unread, ui.history, ui.error);
 }
 
 async function follow() {
-  const geohash = ui.geohash.value.trim().toLowerCase();
+  // A place or an IP address too, when the console looks them up (lot 19).
+  const geohash = typedCell(ui.geohash.value);
   if (!geohash) return;
   save("teleport", ui.teleport.checked ? "1" : "0");
   ui.error.textContent = "";
   const { ok, data } = await command("api/area", { geohash, teleport: ui.teleport.checked });
   if (!ok) { ui.error.textContent = (data && data.message) || "refused"; return; }
+  // A place typed: the field shows the cell it gave (lot 19).
+  if (data && data.cells && data.cells.length) ui.geohash.value = data.cells[0];
   ui.edited = false;
   state.selected = null;
   state.writeCell = null;
@@ -344,6 +350,32 @@ function updateTop() {
   ui.info.textContent = s.center
     ? ` #${s.center}${s.teleport ? " · teleported" : " · on site"} · ${s.connector}`
     : ` ${s.connector}`;
+  if (s.center) nameCell(s.center);
+}
+
+// --- Name of the cell (lot 19) ----------------------------------------------------
+
+// Asked once per cell. A console without places answers 404: the field then
+// keeps its geohash-only hints.
+async function nameCell(cell) {
+  if (ui.place.dataset.for === cell || ui.place.dataset.off) return;
+  ui.place.dataset.for = cell;
+  ui.place.textContent = "";
+  ui.place.title = "";
+  try {
+    const resp = await fetch("api/place?geohash=" + encodeURIComponent(cell));
+    if (resp.status === 404) {
+      const data = await resp.json().catch(() => null);
+      if (data && data.error === "no_places") { ui.place.dataset.off = "1"; return; }
+    }
+    ui.geohash.placeholder = "geohash, a place or an IP address";
+    ui.geohash.title = "a geohash (u09tv or #u09tv), a place (Rue de Rivoli, Paris) or an IP address; "
+      + "places are looked up in direct, not through Tor";
+    const data = resp.ok ? await resp.json() : null;
+    if (ui.place.dataset.for !== cell || !data || !data.place) return;
+    ui.place.textContent = "≈ " + data.place.label;
+    ui.place.title = `${data.place.label}\napproximate name of #${cell} (${data.place.source}: ${data.place.attribution})`;
+  } catch { /* no name: the cell is shown anyway */ }
 }
 
 // --- Cells ----------------------------------------------------------------------

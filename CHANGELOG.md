@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+- Places for the cell (lot 19, D35), feature `geocode` (default), with
+  [geohash-lookup](https://github.com/wvmscs/geohash-lookup) `v0.1.1`: the command line's cell
+  and the page's top field take `#u09tv`, a place or an IP address (`--geoip-db`, the DB-IP
+  file downloaded there if missing), resolved to the finest channel that holds it.
+  `POST /api/area` answers the `place` found; `GET /api/place?geohash=` names a cell
+  approximately (cached; `404 no_places` without places), shown in the top bar with its data
+  credit. `geocode::Places`, `Error::Geocode`, `Error::PlaceNotFound` (`404 place_not_found`,
+  `502 geocode`). **These lookups do not go through Tor** (user's choice); typed texts are
+  never logged.
+
 ### Changed
 - `--qualify`, `--qualify-probe`: the A6 run comes from geohash-relays-net (`qualify::run`),
   shared with its census of relays (`relay-census`); same behaviour.

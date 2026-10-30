@@ -58,17 +58,17 @@ impl Running {
 
     /// With a history (D31) in `history`.
     async fn start_keeping(history: Option<std::path::PathBuf>) -> Running {
-        Self::start_with(history, None).await
+        Self::start_with(history, |_| {}).await
     }
 
     /// Behind a proxy (D34).
     async fn start_behind(proxy: ProxyConfig) -> Running {
-        Self::start_with(None, Some(proxy)).await
+        Self::start_with(None, |s| s.proxy = Some(proxy)).await
     }
 
     async fn start_with(
         history: Option<std::path::PathBuf>,
-        proxy: Option<ProxyConfig>,
+        tune: impl FnOnce(&mut ServerConfig),
     ) -> Running {
         let relay = TestRelay::spawn("127.0.0.1:0").await.unwrap();
         let mut c = config(&[relay.url()], Arc::new(Loopback));
@@ -76,16 +76,12 @@ impl Running {
         let console = Arc::new(Console::start(c));
         console.set_area("u09tv", true).await.unwrap();
         status_until(&console, "connected", all_connected).await;
-        let server = serve(
-            console.clone(),
-            ServerConfig {
-                listen: "127.0.0.1:0".parse().unwrap(),
-                proxy,
-                ..ServerConfig::default()
-            },
-        )
-        .await
-        .unwrap();
+        let mut config = ServerConfig {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            ..ServerConfig::default()
+        };
+        tune(&mut config);
+        let server = serve(console.clone(), config).await.unwrap();
         let addr = server.local_addr();
         std::mem::forget(server);
         Running {
@@ -524,4 +520,35 @@ async fn behind_a_proxy_the_start_checks() {
     .await
     .unwrap();
     remote.shutdown().await;
+}
+
+// --- Lot 19: places (feature `geocode`), offline: geohashes only ---
+
+#[cfg(feature = "geocode")]
+#[tokio::test]
+async fn cells_typed_with_a_hash_and_the_place_endpoint() {
+    use bitchat_console::geocode::Places;
+    let places = Arc::new(Places::new(None).await.unwrap());
+    let r = Running::start_with(None, move |s| s.places = Some(places)).await;
+    let (status, body) = r
+        .post("/api/area", r##"{"geohash":"#U09TW","teleport":true}"##)
+        .await;
+    assert_eq!(
+        (status, &body["cells"][0]),
+        (200, &json!("u09tw")),
+        "{body}"
+    );
+    assert_eq!(body["place"], Value::Null, "a geohash is not looked up");
+    let (status, body) = r.post("/api/area", r#"{"geohash":"u0a"}"#).await;
+    assert_eq!((status, &body["error"]), (400, &json!("invalid_geohash")));
+    let (status, _) = http(r.addr, "GET", "/api/place?geohash=paris", &[r.host()], "").await;
+    assert_eq!(status, 400);
+}
+
+#[tokio::test]
+async fn without_places_the_page_is_told_so() {
+    let r = Running::start().await;
+    let (status, body) = http(r.addr, "GET", "/api/place?geohash=u09tv", &[r.host()], "").await;
+    assert_eq!(status, 404);
+    assert!(body.contains("no_places"), "{body}");
 }

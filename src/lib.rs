@@ -12,6 +12,8 @@ pub mod db;
 pub mod envelope;
 mod error;
 pub mod federation;
+#[cfg(feature = "geocode")]
+pub mod geocode;
 pub mod groups;
 pub mod history;
 pub mod identity;

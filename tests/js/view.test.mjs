@@ -163,3 +163,11 @@ test("someone not seen for 10 min has left; a conversation then is over", () => 
   assert.equal(convoOver(convo(1, 9_000), present, 10_000), false, "unread: kept");
   assert.equal(convoOver(convo(0, 9_800), present, 10_000), false);
 });
+
+test("typed cell (lot 19)", () => {
+  assert.equal(v.typedCell(" #U09TV "), "u09tv");
+  assert.equal(v.typedCell("u09tv"), "u09tv");
+  assert.equal(v.typedCell("# u09tv"), "u09tv");
+  assert.equal(v.typedCell(" Rue de Rivoli, Paris "), "Rue de Rivoli, Paris");
+  assert.equal(v.typedCell("8.8.8.8"), "8.8.8.8");
+});

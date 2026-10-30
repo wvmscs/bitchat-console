@@ -25,6 +25,7 @@ button:disabled { opacity: .5; }
 #top h1 { font-size: 16px; margin: 0 8px 0 0; }
 #top input { width: 16ch; }
 #top input[type="checkbox"] { width: auto; }
+#top .place { max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check { display: flex; align-items: center; gap: 2px; }
 .link.live { color: var(--ok); }
 .link.connecting, .link.reconnecting { color: var(--warn); }
