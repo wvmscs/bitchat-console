@@ -227,3 +227,22 @@ export function typedCell(text) {
   const g = t.replace(/^#\s*/, "").toLowerCase();
   return /^[0-9b-hjkmnp-z]{1,12}$/.test(g) ? g : t;
 }
+
+// A drawing asked for often, done at most once in a while: the page keeps
+// the hand whatever comes from the relays (lot 22). The gap grows with what
+// the drawing costs, so that it takes about a fifth of the time at most.
+export function throttled(draw, { minGap = 250, now = () => performance.now(), later = setTimeout } = {}) {
+  let waiting = false;
+  let next = 0;
+  return () => {
+    if (waiting) return;
+    waiting = true;
+    later(() => {
+      waiting = false;
+      const start = now();
+      draw();
+      const end = now();
+      next = end + Math.max(minGap, (end - start) * 4);
+    }, Math.max(0, next - now()));
+  };
+}

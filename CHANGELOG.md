@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+- The page froze on a busy region (lot 22): each event from the relays (about 13 a second on
+  `u0`) redrew the whole feed and the cells, at once. With about 1000 messages it blocked 86 %
+  of the time, up to 26 s in one go, and could hang the browser. Those drawings are now grouped,
+  at most a fifth of the time; what the user does still draws at once.
+
 ### Added
 - The version on the title line (lot 21): the `v*` tag of the build, else the first 7
   characters of its commit (`build.rs`, `BITCHAT_BUILD_VERSION` when packaging from a copy

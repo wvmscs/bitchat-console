@@ -27,6 +27,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 18 | Derrière un proxy TLS (D34) : contrôle par requête, sonde au démarrage | ✅ |
 | 19 | Cellule donnée par un lieu ou une IP (`geohash-lookup`, feature `geocode`, D35), nom approximatif de la cellule | ✅ |
 | 21 | Version (tag ou commit) et nom de la cellule sur la ligne du titre | ✅ |
+| 22 | Page figée sur une région active : redessins dus au flux regroupés | ✅ |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
 8 dépend de 5 et 7 ; 9 dépend de 7 ; 10 dépend de 6 ; 11 dépend de 2 ; 12 clôt l'étape.
@@ -520,6 +521,19 @@ sur la branche `assist`.
       « BitChat console ». Titre, version et nom sont dans l'en-tête du cartouche (message
       `bitchat-console:head`), masqués dans la page incluse.
 
+### Lot 22 : page figée sur une région active ✅
+
+Signalé par l'utilisateur (30/10/2026) : en suivant `u0`, l'onglet puis Safari ne répondaient
+plus. Mesuré sur `u0` : environ 13 événements par seconde (`delivered` 8,8, `status` 2,3,
+`participants` 1,5), chacun redessinant tout le fil et les cellules, de façon synchrone.
+
+- [x] `view.js` : `throttled` (intervalle d'au moins 250 ms et de 4 fois le coût du dessin, soit au
+      plus un cinquième du temps) ; les événements du flux l'utilisent, les actions de
+      l'utilisateur dessinent toujours tout de suite.
+- [x] Test JS. Banc : 1072 messages synthétiques, `u0` réel, Chromium, 30 s : temps bloqué 86 % →
+      9 %, tâche la plus longue 26 s → 106 ms. Console sur la carte : retard maximal 669 ms ; carte
+      au niveau 4 (1024 formes) : 56 ms.
+
 ## Décisions
 
 Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et dans la spec.
@@ -609,3 +623,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 30/10/2026 | 19 | Cellule donnée par un lieu ou une IP et nom approximatif de la cellule (D35), feature `geocode` avec `geohash-lookup` `v0.1.1`, à la demande de l'utilisateur. 80 tests Rust (78 sans la feature), 16 JS ; clippy propre (défaut, sans feature, arti). Essai réel : « Rue de Rivoli, Paris » → `#u09tvpj`, « Tokyo » → `#xn`. |
 | 30/10/2026 | 21 | Version et nom de la cellule sur la ligne du titre, à la demande de l'utilisateur, depuis un worktree de `main` (la branche `assist` occupe le dossier principal). Vérifié dans le navigateur. |
 | 30/10/2026 | 21 | Sur la carte : version et nom de la cellule dans l'en-tête du cartouche, plus de seconde ligne de titre, retour de l'utilisateur. |
+| 30/10/2026 | 22 | Page figée sur `u0` : reproduite (86 % bloqué, tâche de 26 s), redessins regroupés (9 %, 106 ms). Pas encore vérifié dans Safari. |

@@ -7,7 +7,7 @@
 
 import {
   author, clock, conversations, convoOver, hasLeft, feed, feedCells, gridOrder, groupTexts, isImage, linkify, nicknames, people, personNote,
-  relayCount, repeatLabel, statusMark, typedCell, unixFromLocal, unreadTotal, visible,
+  relayCount, repeatLabel, statusMark, throttled, typedCell, unixFromLocal, unreadTotal, visible,
 } from "./view.js";
 
 function el(tag, cls, text) {
@@ -531,6 +531,11 @@ function textNodes(parent, text) {
 }
 
 function renderFeed() { keep("feed", drawFeed); }
+// For what comes from the relays: a busy region sends about ten events a
+// second, and redrawing a long feed at each would freeze the page (lot 22).
+// What the user does still draws at once.
+const feedSoon = throttled(renderFeed);
+const cellsSoon = throttled(() => renderCells());
 
 function drawFeed(box) {
   box.replaceChildren();
@@ -957,12 +962,12 @@ function connect() {
   source = new EventSource("api/events");
   const on = (name, f) => source.addEventListener(name, e => { f(JSON.parse(e.data)); });
   on("state", d => { state.link = "live"; onState(d); });
-  on("status", s => { state.status = s; updateTop(); renderCells(); });
+  on("status", s => { state.status = s; updateTop(); cellsSoon(); });
   on("message", m => {
     const list = state.messages[m.cell] || (state.messages[m.cell] = []);
     if (!list.some(x => x.id === m.id)) list.push(m);
     seenNow(m.cell, m.pubkey, m.created_at);
-    renderCells(); renderFeed();
+    cellsSoon(); feedSoon();
     if (m.cell === currentCell()) refreshPeople();
     // A correspondent's nickname, now known.
     if (m.nickname && state.dms.some(d => d.peer === m.pubkey)) renderDms();
@@ -972,11 +977,11 @@ function connect() {
       const m = list.find(x => x.id === d.id);
       if (m && !m.relays.includes(d.relay)) m.relays.push(d.relay);
     }
-    renderFeed();
+    feedSoon();
   });
   on("participants", p => {
     const c = state.status && state.status.cells.find(x => x.geohash === p.cell);
-    if (c) { c.participants = p.count; renderCells(); }
+    if (c) { c.participants = p.count; cellsSoon(); }
     if (p.cell === currentCell()) refreshPeople();
   });
   on("dm", dm => {
@@ -1000,7 +1005,7 @@ function connect() {
   on("relay_text", t => {
     state.texts.push({ ...t, at: Date.now() / 1000 });
     if (state.texts.length > 1000) state.texts.splice(0, state.texts.length - 1000);
-    renderCells();
+    cellsSoon();
   });
   on("local", l => { state.local = l; renderCells(); renderFeed(); renderSaved(); });
   on("groups", g => { state.groups = g; renderGroups(); renderDms(); });

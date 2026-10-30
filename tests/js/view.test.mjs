@@ -171,3 +171,27 @@ test("typed cell (lot 19)", () => {
   assert.equal(v.typedCell(" Rue de Rivoli, Paris "), "Rue de Rivoli, Paris");
   assert.equal(v.typedCell("8.8.8.8"), "8.8.8.8");
 });
+
+test("drawings asked for often are grouped (lot 22)", () => {
+  let t = 0;
+  const timers = [];
+  let draws = 0;
+  const later = (f, ms) => timers.push({ f, at: t + ms });
+  const fire = () => { const x = timers.shift(); t = Math.max(t, x.at); x.f(); };
+  const soon = v.throttled(() => { draws++; t += 100; }, { minGap: 250, now: () => t, later });
+  soon(); soon(); soon();
+  assert.equal(timers.length, 1, "one drawing for many requests");
+  assert.equal(timers[0].at, 0, "the first at once");
+  fire();
+  assert.equal(draws, 1);
+  // It took 100 ms: the next one 400 ms after it, more than the minimum.
+  soon(); soon();
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].at, 500);
+  fire();
+  assert.equal(draws, 2);
+  // Cheap drawing: the minimum gap.
+  const cheap = v.throttled(() => { draws++; }, { minGap: 250, now: () => t, later });
+  cheap(); fire(); cheap();
+  assert.equal(timers[0].at - t, 250);
+});
