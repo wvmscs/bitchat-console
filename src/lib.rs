@@ -7,6 +7,10 @@
 //! one key per cell like the app; DMs, mixed groups, and a page in the
 //! browser. See `SPECIFICATIONS.md` and `PLAN_ET1.md`.
 
+/// The version of this build: its `v*` tag, else the first 7 characters of
+/// its commit (see `build.rs`).
+pub const VERSION: &str = env!("BITCHAT_VERSION");
+
 pub mod console;
 pub mod db;
 pub mod envelope;

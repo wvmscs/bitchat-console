@@ -26,6 +26,7 @@ Plan de réalisation de [SPECIFICATIONS.md](SPECIFICATIONS.md). Créé le 28/10/
 | 17 | API CRUD, outil `bitchat-history` (sauvegarde, rotation, purge, effacement ; cron, D33), `SKILL.md` | ✅ |
 | 18 | Derrière un proxy TLS (D34) : contrôle par requête, sonde au démarrage | ✅ |
 | 19 | Cellule donnée par un lieu ou une IP (`geohash-lookup`, feature `geocode`, D35), nom approximatif de la cellule | ✅ |
+| 21 | Version (tag ou commit) et nom de la cellule sur la ligne du titre | ✅ |
 
 Ordre : 0 → 1 → 2 → 3 ; 4 dépend de 1, 2 et 3 ; 5 et 6 dépendent de 4 ; 7 dépend de 4 ;
 8 dépend de 5 et 7 ; 9 dépend de 7 ; 10 dépend de 6 ; 11 dépend de 2 ; 12 clôt l'étape.
@@ -505,6 +506,17 @@ partout (pas de Tor) ; base GeoIP en option, téléchargée si absente.
       présence, téléporté) : « Rue de Rivoli, Paris » → `#u09tvpj`, « Tokyo » → `#xn`, `u0a`
       refusé.
 
+### Lot 21 : version et nom sur la ligne du titre ✅
+
+Demande de l'utilisateur (30/10/2026) : le résultat de `geohash-lookup` sur la ligne de « BitChat
+console », avec la version (7 caractères du commit si non versionné). Numéro 21 : le lot 20 est
+sur la branche `assist`.
+
+- [x] `build.rs` : tag `v*` du commit, sinon 7 caractères du commit ; `BITCHAT_BUILD_VERSION`
+      pour une copie sans `.git` (`release.sh` de bitchat-web), sinon la version de `Cargo.toml`.
+- [x] `VERSION`, `version` dans l'état ; page : version et nom juste après le titre.
+- [x] Test de serveur ; vérifié dans le navigateur (`ce74a77`, « ≈ Paris… »).
+
 ## Décisions
 
 Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et dans la spec.
@@ -592,3 +604,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 29/10/2026 | 17 | **Défaut corrigé** (test instable sur la CI) : `wipe` effaçait la base puis ses fichiers `-wal`/`-shm` ; une console qui recréait la base entre les deux perdait ses fichiers neufs, donc ses écritures suivantes. Ordre inversé (fichiers annexes d'abord) ; le test appelle `history::wipe`. 20 passages sous Linux sans échec. |
 | 29/10/2026 | — | Version 0.1.2 (tag `v0.1.2`) : correction de `wipe`, à la demande de l'utilisateur. |
 | 30/10/2026 | 19 | Cellule donnée par un lieu ou une IP et nom approximatif de la cellule (D35), feature `geocode` avec `geohash-lookup` `v0.1.1`, à la demande de l'utilisateur. 80 tests Rust (78 sans la feature), 16 JS ; clippy propre (défaut, sans feature, arti). Essai réel : « Rue de Rivoli, Paris » → `#u09tvpj`, « Tokyo » → `#xn`. |
+| 30/10/2026 | 21 | Version et nom de la cellule sur la ligne du titre, à la demande de l'utilisateur, depuis un worktree de `main` (la branche `assist` occupe le dossier principal). Vérifié dans le navigateur. |

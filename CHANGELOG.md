@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- The version on the title line (lot 21): the `v*` tag of the build, else the first 7
+  characters of its commit (`build.rs`, `BITCHAT_BUILD_VERSION` when packaging from a copy
+  without `.git`), `VERSION`, `version` in the state. The approximate name of the cell moves
+  there too.
 - Places for the cell (lot 19, D35), feature `geocode` (default), with
   [geohash-lookup](https://github.com/wvmscs/geohash-lookup) `v0.1.1`: the command line's cell
   and the page's top field take `#u09tv`, a place or an IP address (`--geoip-db`, the DB-IP

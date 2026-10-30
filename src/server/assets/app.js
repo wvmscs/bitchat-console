@@ -295,7 +295,10 @@ function buildTop() {
   ui.geohash.addEventListener("input", () => { ui.edited = true; });
   ui.link = el("span", "link");
   ui.info = el("span", "muted");
-  // The approximate name of the cell followed (lot 19).
+  // On the title's line (lot 21): the version, the approximate name of the
+  // cell followed (lot 19).
+  ui.version = el("span", "muted small");
+  ui.version.title = "version of this bitchat-console";
   ui.place = el("span", "place muted small");
   ui.error = el("span", "warn");
   ui.sound = el("input");
@@ -316,7 +319,7 @@ function buildTop() {
   ui.history.target = "_blank";
   ui.history.rel = "noopener";
   ui.history.title = "every message kept, for the cell shown: search, sort, delete";
-  top.append(ui.title, ui.geohash, tl, ui.follow, ui.link, ui.info, ui.place, sl, ui.unread, ui.history, ui.error);
+  top.append(ui.title, ui.version, ui.place, ui.geohash, tl, ui.follow, ui.link, ui.info, sl, ui.unread, ui.history, ui.error);
 }
 
 async function follow() {
@@ -917,6 +920,7 @@ function render() {
 }
 
 function onState(d) {
+  ui.version.textContent = d.version;
   state.status = d.status;
   state.messages = d.messages;
   state.dms = d.dms;

@@ -551,4 +551,7 @@ async fn without_places_the_page_is_told_so() {
     let (status, body) = http(r.addr, "GET", "/api/place?geohash=u09tv", &[r.host()], "").await;
     assert_eq!(status, 404);
     assert!(body.contains("no_places"), "{body}");
+    let (_, body) = http(r.addr, "GET", "/api/state", &[r.host()], "").await;
+    let state: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(state["version"], bitchat_console::VERSION);
 }

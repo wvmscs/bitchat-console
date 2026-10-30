@@ -97,7 +97,7 @@ async fn snapshot(console: &Console) -> Result<Value, Error> {
     let local = console.local().await?;
     let groups = console.groups().await?;
     Ok(
-        json!({ "status": status, "messages": messages, "dms": dms, "local": local, "groups": groups }),
+        json!({ "version": crate::VERSION, "status": status, "messages": messages, "dms": dms, "local": local, "groups": groups }),
     )
 }
 
