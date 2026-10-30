@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- `--qualify`, `--qualify-probe`: the A6 run comes from geohash-relays-net (`qualify::run`),
+  shared with its census of relays (`relay-census`); same behaviour.
+
 ## [0.1.2] - 2026-10-29
 
 ### Fixed

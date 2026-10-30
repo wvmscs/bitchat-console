@@ -9,20 +9,16 @@
 //! signed with a throwaway key, and reads it back: a real publication, so
 //! only on the user's request.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
 
 use geohash_relays::a6::{Prober, Qualification};
-use geohash_relays::params::A6_PROBE_CELL;
 use geohash_relays::{RelayDirectory, normalize_url};
-use geohash_relays_net::ports::{ConnectorFetch, SystemClock};
-use geohash_relays_net::runner::Runner;
-use tokio::sync::watch;
 
 use crate::connector::Connector;
-use crate::nostr::{Event, unix_now};
+use crate::nostr::unix_now;
 
 /// A qualification run gives up after this long.
 const RUN_LIMIT: Duration = Duration::from_secs(600);
@@ -37,61 +33,14 @@ pub fn relays_of(lists: &[&RelayDirectory]) -> Vec<String> {
     set.into_iter().collect()
 }
 
-/// Qualifies `relays`: NIP-11 documents, and test events when `probe`.
+/// Qualifies `relays`: NIP-11 documents, and test events when `probe`
+/// (geohash-relays-net's run, shared with its census).
 pub async fn run(
     relays: Vec<String>,
     connector: Arc<dyn Connector>,
     probe: bool,
 ) -> (Prober, bool) {
-    let mut tests = BTreeMap::new();
-    if probe {
-        let mut seed = [0u8; 32];
-        rand_core::RngCore::fill_bytes(&mut rand_core::OsRng, &mut seed);
-        let key = loop {
-            if let Ok(k) = k256::schnorr::SigningKey::from_bytes(&seed) {
-                break k;
-            }
-            seed[0] = seed[0].wrapping_add(1);
-        };
-        let now = unix_now();
-        for (i, r) in relays.iter().enumerate() {
-            let e = Event::signed(
-                &key,
-                now,
-                crate::console::KIND_MESSAGE,
-                vec![vec!["g".into(), A6_PROBE_CELL.into()]],
-                format!("geohash-relays probe {i}"),
-            );
-            tests.insert(r.clone(), e.meta());
-        }
-    }
-    let runner = Runner {
-        connector: connector.clone(),
-        clock: Arc::new(SystemClock),
-        fetch: Some(Arc::new(ConnectorFetch(connector))),
-        isolation: "qualify".into(),
-        tick: Duration::from_secs(1),
-    };
-    let (stop, stop_rx) = watch::channel(false);
-    let limit = stop.clone();
-    let timer = tokio::spawn(async move {
-        tokio::time::sleep(RUN_LIMIT).await;
-        let _ = limit.send(true);
-    });
-    let prober = Prober::new(relays, tests, &[]);
-    let p = runner
-        .run(prober, stop_rx, move |p: &Prober| {
-            if p.done() {
-                let _ = stop.send(true);
-            }
-        })
-        .await;
-    timer.abort();
-    let complete = p.done();
-    if !complete {
-        tracing::warn!("qualification stopped after {} s", RUN_LIMIT.as_secs());
-    }
-    (p, complete)
+    geohash_relays_net::qualify::run(relays, connector, probe, RUN_LIMIT).await
 }
 
 /// The report, in Markdown.
