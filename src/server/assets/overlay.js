@@ -15,6 +15,12 @@ const bar = document.createElement("div");
 bar.className = "bc-bar";
 const title = document.createElement("span");
 title.textContent = "BitChat console";
+// The version and the name of the cell, sent by the page in the frame.
+const version = document.createElement("span");
+version.className = "bc-version";
+version.title = "version of this bitchat-console";
+const place = document.createElement("span");
+place.className = "bc-place";
 const fold = document.createElement("button");
 fold.textContent = "–";
 fold.title = "fold";
@@ -25,7 +31,7 @@ fold.addEventListener("click", () => {
   const folded = box.classList.toggle("folded");
   fold.textContent = folded ? "+" : "–";
 });
-bar.append(title, fold);
+bar.append(title, version, place, fold);
 box.append(bar, frame);
 document.body.append(box);
 
@@ -147,7 +153,11 @@ async function followArea(v, force = false) {
 
 window.addEventListener("message", e => {
   if (e.origin !== location.origin || e.source !== frame.contentWindow) return;
-  if (e.data && e.data.type === "bitchat-console:view") {
+  if (e.data && e.data.type === "bitchat-console:head") {
+    version.textContent = e.data.version;
+    place.textContent = e.data.place;
+    place.title = e.data.placeTitle;
+  } else if (e.data && e.data.type === "bitchat-console:view") {
     lastView = e.data;
     showView(e.data);
     if (e.data.center !== lastCenter) {

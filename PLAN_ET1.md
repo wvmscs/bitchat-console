@@ -516,6 +516,9 @@ sur la branche `assist`.
       pour une copie sans `.git` (`release.sh` de bitchat-web), sinon la version de `Cargo.toml`.
 - [x] `VERSION`, `version` dans l'état ; page : version et nom juste après le titre.
 - [x] Test de serveur ; vérifié dans le navigateur (`ce74a77`, « ≈ Paris… »).
+- [x] Retour de l'utilisateur (capture) : sur la carte, la page incluse ajoutait une seconde ligne
+      « BitChat console ». Titre, version et nom sont dans l'en-tête du cartouche (message
+      `bitchat-console:head`), masqués dans la page incluse.
 
 ## Décisions
 
@@ -605,3 +608,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 29/10/2026 | — | Version 0.1.2 (tag `v0.1.2`) : correction de `wipe`, à la demande de l'utilisateur. |
 | 30/10/2026 | 19 | Cellule donnée par un lieu ou une IP et nom approximatif de la cellule (D35), feature `geocode` avec `geohash-lookup` `v0.1.1`, à la demande de l'utilisateur. 80 tests Rust (78 sans la feature), 16 JS ; clippy propre (défaut, sans feature, arti). Essai réel : « Rue de Rivoli, Paris » → `#u09tvpj`, « Tokyo » → `#xn`. |
 | 30/10/2026 | 21 | Version et nom de la cellule sur la ligne du titre, à la demande de l'utilisateur, depuis un worktree de `main` (la branche `assist` occupe le dossier principal). Vérifié dans le navigateur. |
+| 30/10/2026 | 21 | Sur la carte : version et nom de la cellule dans l'en-tête du cartouche, plus de seconde ligne de titre, retour de l'utilisateur. |

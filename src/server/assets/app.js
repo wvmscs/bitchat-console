@@ -319,6 +319,8 @@ function buildTop() {
   ui.history.target = "_blank";
   ui.history.rel = "noopener";
   ui.history.title = "every message kept, for the cell shown: search, sort, delete";
+  // Over the map, the panel's header shows them (`sendHead`): no second title.
+  if (overMap) ui.title.hidden = ui.version.hidden = ui.place.hidden = true;
   top.append(ui.title, ui.version, ui.place, ui.geohash, tl, ui.follow, ui.link, ui.info, sl, ui.unread, ui.history, ui.error);
 }
 
@@ -365,6 +367,7 @@ async function nameCell(cell) {
   ui.place.dataset.for = cell;
   ui.place.textContent = "";
   ui.place.title = "";
+  sendHead();
   try {
     const resp = await fetch("api/place?geohash=" + encodeURIComponent(cell));
     if (resp.status === 404) {
@@ -378,6 +381,7 @@ async function nameCell(cell) {
     if (ui.place.dataset.for !== cell || !data || !data.place) return;
     ui.place.textContent = "≈ " + data.place.label;
     ui.place.title = `${data.place.label}\napproximate name of #${cell} (${data.place.source}: ${data.place.attribution})`;
+    sendHead();
   } catch { /* no name: the cell is shown anyway */ }
 }
 
@@ -885,6 +889,17 @@ function drawSaved(box) {
 
 const overMap = window.parent !== window;
 
+// Over the map: the version and the name of the cell, for the panel's header.
+function sendHead() {
+  if (!overMap) return;
+  window.parent.postMessage({
+    type: "bitchat-console:head",
+    version: ui.version.textContent,
+    place: ui.place.textContent,
+    placeTitle: ui.place.title,
+  }, location.origin);
+}
+
 // Asks the map to watch the area of `cell` (the overlay does it).
 function mapAreaOf(cell) {
   if (overMap) window.parent.postMessage({ type: "bitchat-console:area", cell }, location.origin);
@@ -921,6 +936,7 @@ function render() {
 
 function onState(d) {
   ui.version.textContent = d.version;
+  sendHead();
   state.status = d.status;
   state.messages = d.messages;
   state.dms = d.dms;
