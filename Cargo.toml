@@ -3,7 +3,7 @@
 
 [package]
 name = "bitchat-console"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 # A second binary, `bitchat-history` (lot 17): `cargo run` runs the console.
 default-run = "bitchat-console"

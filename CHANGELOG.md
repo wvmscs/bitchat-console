@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
 ### Fixed
 - The page froze on a busy region (lot 22): each event from the relays (about 13 a second on
   `u0`) redrew the whole feed and the cells, at once. With about 1000 messages it blocked 86 %
