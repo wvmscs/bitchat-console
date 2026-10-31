@@ -625,3 +625,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 30/10/2026 | 21 | Sur la carte : version et nom de la cellule dans l'en-tête du cartouche, plus de seconde ligne de titre, retour de l'utilisateur. |
 | 30/10/2026 | 22 | Page figée sur `u0` : reproduite (86 % bloqué, tâche de 26 s), redessins regroupés (9 %, 106 ms). Vérifié par l'utilisateur dans Safari sur `u0`, en qualification (`snapshot-2026.10.30-1321`) : réactif. |
 | 30/10/2026 | — | Version 0.2.0 (tag `v0.2.0`), à la demande de l'utilisateur. |
+| 31/10/2026 | — | Version 0.2.1 (tag `v0.2.1`), à la demande de l'utilisateur. |
