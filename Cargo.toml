@@ -19,7 +19,7 @@ repository = "https://github.com/wvmscs/bitchat-console"
 geohash-relays = { git = "https://github.com/wvmscs/geohash-relays.git", branch = "strategies" }
 # Relays, Tor, lists (the console's communication, moved there): feature
 # `console` of the communication crate (decision G12 of geohash-relays).
-geohash-relays-net = { git = "https://github.com/wvmscs/geohash-relays-net.git", branch = "main", features = ["console"] }
+geohash-relays-net = { git = "https://github.com/wvmscs/geohash-relays-net.git", tag = "v0.1.0", features = ["console"] }
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = "0.3"

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- geohash-relays-net is pinned to its tag `v0.1.0` instead of its `main` branch: a tagged
+  console no longer follows a moving branch there.
+
 ## [0.2.1] - 2026-10-31
 
 ### Changed
