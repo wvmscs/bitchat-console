@@ -201,7 +201,23 @@ function fold(key, title, items, { open = true, stick = false, hold = false } = 
   if (hold) body.dataset.hold = "";
   body.append(...items);
   d.append(el("summary", null, title), body);
+  if (stick) followSize(body);
   return d;
+}
+
+// A list that follows the newest stays at its bottom when its size changes
+// without a new drawing (a long message wraps once more in a narrower
+// panel, a note comes under it): otherwise its last line stays hidden.
+// Not when the user scrolled up to read.
+function followSize(body) {
+  let atBottom = true;
+  body.addEventListener("scroll", () => {
+    atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+  });
+  const follow = () => { if (atBottom) body.scrollTop = body.scrollHeight; };
+  const watch = new ResizeObserver(follow);
+  watch.observe(body);
+  for (const child of body.children) watch.observe(child);
 }
 
 // --- Sound on a new private message ------------------------------------------

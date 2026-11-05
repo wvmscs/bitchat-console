@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+- The last line of a long message could stay hidden at the bottom of the feed: the list now
+  follows its own size changes (a message wrapping once more in a narrower panel), when it was
+  at the bottom.
+
 ### Changed
 - geohash-relays-net is pinned to its tag `v0.1.0` instead of its `main` branch: a tagged
   console no longer follows a moving branch there.

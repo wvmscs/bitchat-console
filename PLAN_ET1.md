@@ -627,3 +627,4 @@ Décisions de la spec : D1, D2, D5, D6, D10, D12 ✅ ; les autres, ci-dessous et
 | 30/10/2026 | — | Version 0.2.0 (tag `v0.2.0`), à la demande de l'utilisateur. |
 | 31/10/2026 | — | Version 0.2.1 (tag `v0.2.1`), à la demande de l'utilisateur. |
 | 05/11/2026 | — | `geohash-relays-net` épinglé au tag `v0.1.0` au lieu de la branche `main`, à la demande de l'utilisateur ; `geohash-relays` (`strategies`) avance à `ab9677a` (documentation seulement). 80 tests. |
+| 05/11/2026 | — | Retour de l'utilisateur : dernière ligne d'un long message cachée en bas du fil ; les listes qui suivent le plus récent se recalent quand leur taille change (`ResizeObserver`), si elles étaient en bas. |
