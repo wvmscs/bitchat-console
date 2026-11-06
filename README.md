@@ -119,8 +119,7 @@ The real test publishes only on the relay named in it, with throwaway keys.
 
 ## Documents
 
-[SPECIFICATIONS.md](SPECIFICATIONS.md) and [PLAN_ET1.md](PLAN_ET1.md) (in French): what it does,
-the decisions, the measurements. [AGENTS.md](AGENTS.md): working rules. [CHANGELOG.md](CHANGELOG.md).
+[AGENTS.md](AGENTS.md): working rules. [CHANGELOG.md](CHANGELOG.md).
 
 ## Licence
 

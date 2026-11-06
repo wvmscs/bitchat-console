@@ -7,7 +7,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 
 The page shows private messages: off the loopback it travels in HTTPS only. Instead of a
 certificate given to the console (`--tls-cert`, `--tls-key`), a proxy in front can do the TLS
-and send the requests in clear HTTP to the console's port (decision D34):
+and send the requests in clear HTTP to the console's port:
 
 ```sh
 bitchat-console u09tv --behind-proxy https://bitchat.example.org        # proxy on this machine
