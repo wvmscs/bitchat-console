@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "bitchat-console"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "axum",
  "chacha20poly1305",

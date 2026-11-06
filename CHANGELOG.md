@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-06
+
 ### Fixed
 - The last line of a long message could stay hidden at the bottom of the feed: the list now
   follows its own size changes (a message wrapping once more in a narrower panel), when it was
