@@ -33,7 +33,7 @@ ed25519-dalek = "2"
 # Private messages (lot 6): the BitChat envelope (HKDF, XChaCha20-Poly1305)
 # and the packets the app may compress (raw DEFLATE, decompression only).
 hkdf = "0.12"
-chacha20poly1305 = "0.10"
+chacha20poly1305 = "0.11"
 miniz_oxide = "0.8"
 # Relays (lot 4): WebSocket over the Tor stream, TLS with the web roots.
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
